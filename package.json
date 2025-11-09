@@ -1,0 +1,29 @@
+{
+  "name": "twitter-curator",
+  "version": "1.0.0",
+  "description": "Persona-driven Twitter content curation and automation",
+  "main": "twitter-curator.js",
+  "scripts": {
+    "start": "node twitter-curator.js",
+    "test-content": "node content-generator.js",
+    "dry-run": "DRY_RUN=true node twitter-curator.js"
+  },
+  "keywords": [
+    "twitter",
+    "automation",
+    "ai",
+    "persona",
+    "curator"
+  ],
+  "author": "Lman",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^16.0.3",
+    "playwright": "^1.56.1",
+    "puppeteer": "^24.27.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ws": "^8.18.3"
+  }
+}

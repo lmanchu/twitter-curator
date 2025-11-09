@@ -40,27 +40,23 @@ function extractPersonaSummary(personaContent) {
 }
 
 /**
- * 使用 Gemini 生成原創推文
+ * 使用 Ollama 生成原創推文
  */
 async function generateOriginalTweet(persona, topic, apiKey) {
   const personaSummary = extractPersonaSummary(persona);
 
-  const prompt = `You are Lman, creating an original tweet. Context about Lman:
+  const prompt = `Write a tweet as Lman (CoFounder at IrisGo.AI, early-stage startup builder).
 
-${personaSummary}
+Topic: ${topic}
 
-Topic area: ${topic}
+Requirements:
+- Max 280 characters
+- English only
+- No hashtags
+- Conversational, human tone
+- Share insight from builder perspective
 
-Create an authentic, insightful tweet (max 280 chars) that:
-1. Shares a unique insight or perspective from Lman's experience
-2. May use historical analogies or builder's perspective
-3. Is conversational and human (not AI-sounding)
-4. NO hashtags, minimal emojis
-5. MUST be in English
-6. Could ask a thought-provoking question or share a learning
-7. Reflects practical idealism and long-term thinking
-
-Tweet (just the text):`;
+Output ONLY the tweet text, nothing else:`;
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);
@@ -72,27 +68,21 @@ Tweet (just the text):`;
 }
 
 /**
- * 使用 Gemini 生成推文回覆
+ * 使用 Ollama 生成推文回覆
  */
 async function generateReply(tweetText, tweetAuthor, persona, apiKey) {
-  const personaSummary = extractPersonaSummary(persona);
+  const prompt = `Reply to this tweet as Lman (startup builder, AI/tech expert):
 
-  const prompt = `You are Lman, responding to a tweet. Context about Lman:
+@${tweetAuthor}: "${tweetText}"
 
-${personaSummary}
+Requirements:
+- Max 280 characters
+- English only
+- No hashtags
+- Conversational, add value
+- Technical but friendly
 
-Tweet from @${tweetAuthor}:
-"${tweetText}"
-
-Generate an authentic, concise response (1-2 sentences, max 280 chars) that:
-1. Matches Lman's expertise and voice (technical but friendly, practical yet idealistic)
-2. Adds value (insight, question, or builds on the idea)
-3. MUST be in English only
-4. NO hashtags, minimal emojis, sounds human not AI
-5. Is conversational, not formal
-6. May use historical analogies or builder perspective when relevant
-
-Response (just the text):`;
+Output ONLY the reply text:`;
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);
@@ -104,42 +94,54 @@ Response (just the text):`;
 }
 
 /**
- * 調用 Gemini API
+ * 調用本地 Ollama API (gpt-oss:20b)
  */
 async function callGeminiAPI(prompt, apiKey) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  const url = 'http://localhost:11434/api/generate';
 
   const payload = {
-    contents: [{
-      parts: [{
-        text: prompt
-      }]
-    }],
-    generationConfig: {
-      temperature: 0.8,
-      maxOutputTokens: 300,
-      topP: 0.9,
+    model: 'gpt-oss:20b',
+    prompt: prompt,
+    stream: false,
+    options: {
+      temperature: 0.7,
+      num_predict: 200,
+      top_p: 0.9,
     }
   };
 
-  const command = `curl -s -X POST '${url}?key=${apiKey}' \
+  const command = `curl -s -X POST '${url}' \
     -H 'Content-Type: application/json' \
     -d '${JSON.stringify(payload).replace(/'/g, "'\\''")}'`;
 
   const response = execSync(command, { encoding: 'utf-8' });
   const data = JSON.parse(response);
 
-  if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
-    return data.candidates[0].content.parts[0].text;
+  // gpt-oss model puts content in 'thinking' field
+  if (data.thinking) {
+    return data.thinking;
+  } else if (data.response) {
+    return data.response;
   }
 
-  throw new Error('Invalid Gemini API response');
+  throw new Error('Invalid Ollama API response');
 }
 
 /**
- * 清理生成的內容
+ * 清理生成的內容 (從 Ollama thinking 中提取實際推文)
  */
 function cleanContent(content) {
+  // Try to extract quoted content from Ollama's thinking
+  const quoteMatch = content.match(/"([^"]{20,280})"/);
+  if (quoteMatch && quoteMatch[1]) {
+    return quoteMatch[1]
+      .replace(/\n+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 280);
+  }
+
+  // Fallback: clean the raw content
   return content
     .replace(/^["']|["']$/g, '')     // 移除引號
     .replace(/\n+/g, ' ')            // 換行轉空格

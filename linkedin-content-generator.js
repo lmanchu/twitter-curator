@@ -131,8 +131,8 @@ Your reply:`;
  */
 async function callOllamaAPI(prompt) {
   const url = 'http://localhost:11434/api/generate';
-  // 對於短回覆，優先使用非思考型模型
-  const models = ['qwen2.5:14b', 'qwen2.5vl:3b', 'gpt-oss:20b'];
+  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3:32b
+  const models = ['gpt-oss:20b', 'qwen3:32b'];
 
   for (const model of models) {
     try {

@@ -131,8 +131,8 @@ Output ONLY the reply text:`;
 async function callGeminiAPI(prompt, apiKey) {
   const url = 'http://localhost:11434/api/generate';
 
-  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到其他模型
-  const models = ['gpt-oss:20b', 'qwen2.5:14b', 'qwen2.5vl:3b', 'llama3.2:3b'];
+  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3:32b
+  const models = ['gpt-oss:20b', 'qwen3:32b'];
 
   for (const model of models) {
     try {

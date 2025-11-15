@@ -1,0 +1,31 @@
+[
+  {
+    "content": "Ever felt like building AI is handing over your soul to a data monster? 👹 I have.\n\nBuilding IrisGo.AI, a privacy-first AI assistant, has been a tightrope walk. Early on, we faced a critical decision: train our models on user data, like everyone else, or find a better way. The allure of rapid improvement via user data was *strong*. We could have significantly accelerated our development.\n\nBut… then what? We’d be compromising the very promise we were making to our users: that their data *stays* theirs. Imagine explaining that to a user after preaching about privacy! The cognitive dissonance alone kept me up at night.\n\nInstead, we doubled down on synthetic data generation and federated learning. It's been slower, no question. More complex. Way more frustrating at times. But it’s allowed us to build a powerful AI without becoming a data hoarder. 🛡️\n\nThe takeaway? Speed isn't everything. As builders in the AI space, we have a responsibility to design ethical, privacy-respecting systems *from the ground up*. It's harder, yes, but it's also the only sustainable way forward. Building trust is paramount, and that starts with respecting user privacy, even when it's inconvenient.\n\nWhat are *your* biggest ethical considerations when building AI? I'm keen to hear your thoughts.",
+    "timestamp": "2025-11-09T02:27:58.330Z",
+    "platform": "linkedin"
+  },
+  {
+    "text": "At IrisGo.AI, we're committed to revolutionizing enterprise AI adoption.\n\nRecently, we faced a significant challenge in understanding our customers' complex needs and devising the most effective solut",
+    "timestamp": "2025-11-14T00:25:38.266Z",
+    "platform": "linkedin",
+    "method": "puppeteer"
+  },
+  {
+    "text": "Introducing Privacy-First Personal AI: Revolutionizing the AI Landscape At IrisGo.AI, we're on a mission to empower users while ensuring their privacy is paramount.\n\nOur cutting-edge technology not on",
+    "timestamp": "2025-11-14T01:31:03.689Z",
+    "platform": "linkedin",
+    "method": "puppeteer"
+  },
+  {
+    "text": "As the world becomes increasingly intertwined with technology, the importance of critical thinking in the AI age is more crucial than ever.\n\nHow do we ensure that AI systems are not only accurate and ",
+    "timestamp": "2025-11-14T06:46:47.032Z",
+    "platform": "linkedin",
+    "method": "puppeteer"
+  },
+  {
+    "text": "**Hook:** In an ever-evolving industry, staying ahead of the curve requires more than just technical expertise.\n\nIt's about embracing lifelong learning strategies that keep you agile and adaptable.\n\nL",
+    "timestamp": "2025-11-15T01:31:18.499Z",
+    "platform": "linkedin",
+    "method": "puppeteer"
+  }
+]

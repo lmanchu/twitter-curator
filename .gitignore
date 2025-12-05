@@ -5,16 +5,19 @@ node_modules/
 logs/
 *.log
 
-# Chrome user data (contains login session)
+# Chrome user data (contains login sessions)
 chrome-user-data/
+chrome-user-data-linkedin/
 
 # Environment variables (contains API keys)
 .env
 
-# Posted tweets history (contains personal data)
+# Posted history (contains personal data)
 posted-tweets.json
 replied-tweets.json
 daily-stats.json
+daily-linkedin-stats.json
+linkedin-replied-posts.json
 
 # Temporary files
 *.tmp
@@ -26,6 +29,8 @@ daily-stats.json
 # LaunchAgents (system-specific paths)
 *.plist
 
-# Test outputs
+# Test outputs & error screenshots
 twitter-*.png
+linkedin-*.png
+error-screenshot-*.png
 debug-*.html

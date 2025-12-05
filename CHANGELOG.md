@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-12-05
+
+### 🔧 LinkedIn Curator Improvements
+
+This version fixes critical bugs in the LinkedIn automation system and adds English-only output for international audience reach.
+
+### Fixed
+- 🐛 **CRITICAL**: Fixed LLM "Thinking..." block being posted to LinkedIn
+  - Added `stripThinkingBlock()` function to filter out model reasoning
+  - Applied to three code paths: `generateDraft()`, `correctDraft()`, and `callOllamaAPI()`
+  - Regex patterns handle both `Thinking...done thinking.` and `<thinking>` XML formats
+
+- 🐛 **CRITICAL**: Fixed `linkedin-content-generator.js` returning `data.thinking` instead of `data.response`
+  - Ollama API returns both `response` (actual output) and `thinking` (internal reasoning)
+  - Now correctly prioritizes `data.response` over `data.thinking`
+
+### Changed
+- 🌐 **LinkedIn posts now output in English only** (previously Chinese)
+  - Updated `linkedin-fact-checker-ollama.js` prompts to require English
+  - Changed system prompt, requirements, and correction prompts
+  - Better suited for international LinkedIn audience
+
+### Technical Details
+
+**Files Modified:**
+- `linkedin-fact-checker-ollama.js` (lines 81-109, 210-216, 218-223)
+- `linkedin-content-generator.js` (lines 245-259)
+
+**stripThinkingBlock() Function:**
+```javascript
+function stripThinkingBlock(content) {
+  let cleaned = content.replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '');
+  cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>\s*/gi, '');
+  cleaned = cleaned.replace(/^\s+/, '');
+  return cleaned;
+}
+```
+
+**Verified Results:**
+- Fact-check score: 100/100
+- Clean English output without thinking process
+- Successfully published 3 LinkedIn posts
+
+---
+
 ## [2.0.0] - 2025-11-09
 
 ### 🎉 Major Release - Working Automation System

@@ -84,7 +84,10 @@ async function generateLinkedInPost(persona, topic) {
 Topic: ${topic}
 Style: ${randomStyle}
 
-Requirements:
+Step 1: Think about the best approach (internal analysis only)
+Step 2: Write your final LinkedIn post
+
+Requirements for final post:
 - Length: 600-1000 characters
 - English only
 - Professional yet conversational
@@ -94,7 +97,8 @@ Requirements:
 - Use paragraph breaks for readability
 - 3-5 relevant hashtags at the end
 
-Output ONLY the LinkedIn post text, nothing else:`;
+Format your response as:
+FINAL POST: [your actual LinkedIn post here]`;
 
   try {
     const response = await callOllamaAPI(prompt);
@@ -105,21 +109,105 @@ Output ONLY the LinkedIn post text, nothing else:`;
   }
 }
 
+// 動漫/SciFi 類比庫 - LinkedIn 專業版（從 Twitter Curator 整合）
+const LINKEDIN_ANIME_ANALOGIES = {
+  'AI': [
+    { anime: '我的英雄學院', analogy: 'AI evolution reminds me of Deku\'s growth - it\'s about continuous improvement, not initial capabilities.' },
+    { anime: '星際效應', analogy: 'AI development needs an Interstellar perspective - thinking in terms of long-term impact.' },
+    { anime: 'The Matrix', analogy: 'Like The Matrix taught us, the key question isn\'t what AI can do, but how we choose to use it.' }
+  ],
+  'Startup': [
+    { anime: '一拳超人', analogy: 'Building a startup is like Saitama\'s training - real strength comes from doing the ordinary things consistently.' },
+    { anime: 'Silicon Valley', analogy: 'The startup ecosystem is exactly like Silicon Valley (the show) depicts - chaotic but full of opportunities.' },
+    { anime: '怪獸八號', analogy: 'Career transitions remind me of Kaiju No. 8 - it\'s never too late to pursue your unique value.' }
+  ],
+  'Product': [
+    { anime: '葬送的芙莉蓮', analogy: 'Product design is like Frieren teaches us - don\'t chase short-term flashiness, choose what lasts.' },
+    { anime: '迷宮飯', analogy: 'Product development requires Dungeon Meshi thinking - creative resource integration is key.' }
+  ],
+  'Team': [
+    { anime: '排球少年', analogy: 'Effective teams are like volleyball - everyone plays their position, trusting each other.' },
+    { anime: 'Fairy Tail', analogy: 'Team culture is our guild - partners are the most valuable asset.' }
+  ],
+  'Leadership': [
+    { anime: 'Star Trek', analogy: 'Leadership needs Star Trek captains\' mindset - exploration spirit + rational decisions + humanistic care.' },
+    { anime: 'Gundam', analogy: 'Leadership requires Gundam-level systems thinking - balancing multiple complex factors.' }
+  ]
+};
+
+/**
+ * 獲取動漫類比（LinkedIn 版本 - 10% 機率，更專業）
+ */
+function getLinkedInAnimeAnalogy(postText) {
+  // LinkedIn 上使用更保守的機率 (10%)
+  if (Math.random() > 0.1) return null;
+
+  const lowerText = postText.toLowerCase();
+
+  for (const [category, analogies] of Object.entries(LINKEDIN_ANIME_ANALOGIES)) {
+    if (lowerText.includes(category.toLowerCase())) {
+      const randomAnalogy = analogies[Math.floor(Math.random() * analogies.length)];
+      return randomAnalogy.analogy;
+    }
+  }
+
+  return null;
+}
+
 /**
  * 使用 Ollama 生成 LinkedIn 回覆
  */
 async function generateLinkedInReply(postText, postAuthor, persona) {
-  const prompt = `You are Lman, Co-Founder at IrisGo.AI. Write a professional LinkedIn comment reply.
+  // 檢查是否使用動漫類比
+  const animeAnalogy = getLinkedInAnimeAnalogy(postText);
+
+  let prompt;
+  if (animeAnalogy) {
+    // 有動漫類比的版本
+    prompt = `You are Lman, Co-Founder at IrisGo.AI. Write a professional LinkedIn comment reply.
 
 Post to reply to: "${postText}"
 
-Write a 150-300 character professional reply. Be concise, add value, and be respectful. No hashtags.
+Include this insight naturally in your reply: "${animeAnalogy}"
 
-Your reply:`;
+Step 1: Think about how to incorporate the insight naturally (internal)
+Step 2: Write your final reply
+
+Requirements:
+- 200-350 characters
+- Professional, concise, add value
+- No hashtags
+
+Format your response as:
+FINAL REPLY: [your actual LinkedIn comment here]`;
+  } else {
+    // 標準版本
+    prompt = `You are Lman, Co-Founder at IrisGo.AI. Write a professional LinkedIn comment reply.
+
+Post to reply to: "${postText}"
+
+Step 1: Think about the best response approach (internal)
+Step 2: Write your final reply
+
+Requirements:
+- 150-300 characters
+- Professional, concise, respectful
+- No hashtags
+
+Format your response as:
+FINAL REPLY: [your actual LinkedIn comment here]`;
+  }
 
   try {
     const response = await callOllamaAPI(prompt);
-    return cleanReplyContent(response);
+    const cleanedReply = cleanReplyContent(response);
+
+    // 如果使用了動漫類比，記錄日誌
+    if (animeAnalogy && cleanedReply) {
+      console.log('[INFO] 🎬 Used anime analogy in LinkedIn reply');
+    }
+
+    return cleanedReply;
   } catch (error) {
     console.error('Error generating LinkedIn reply:', error.message);
     return null;
@@ -131,8 +219,8 @@ Your reply:`;
  */
 async function callOllamaAPI(prompt) {
   const url = 'http://localhost:11434/api/generate';
-  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3:32b
-  const models = ['gpt-oss:20b', 'qwen3:32b'];
+  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3-vl:30b (MoE)
+  const models = ['gpt-oss:20b', 'qwen3-vl:30b'];
 
   for (const model of models) {
     try {
@@ -154,12 +242,20 @@ async function callOllamaAPI(prompt) {
       const response = execSync(command, { encoding: 'utf-8', timeout: 90000 });
       const data = JSON.parse(response);
 
-      if (data.thinking) {
-        console.log(`[INFO] Using model: ${model}`);
-        return data.thinking;
-      } else if (data.response) {
+      // ✅ Always prefer data.response (actual output)
+      // data.thinking is the model's internal reasoning - should NOT be returned
+      if (data.response) {
         console.log(`[INFO] Using model: ${model}`);
         return data.response;
+      } else if (data.thinking) {
+        // Fallback: some models only return thinking
+        console.log(`[WARN] Model ${model} only returned thinking, extracting content...`);
+        // Strip thinking markers if present
+        let content = data.thinking;
+        content = content.replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '');
+        content = content.replace(/<thinking>[\s\S]*?<\/thinking>\s*/gi, '');
+        content = content.replace(/^\s+/, '');
+        return content;
       }
 
       throw new Error('No valid response from model');
@@ -177,23 +273,61 @@ async function callOllamaAPI(prompt) {
  * 清理 LinkedIn 貼文內容
  */
 function cleanLinkedInContent(content, topic) {
-  const promptKeywords = ['Topic:', 'Requirements:', 'Output ONLY', 'Co-Founder at'];
-  if (promptKeywords.some(kw => content.includes(kw))) {
-    console.log('[WARN] Model output contains prompt keywords, trying to extract...');
+  console.log('[DEBUG] Cleaning LinkedIn content, length:', content.length);
 
-    const quoteMatches = content.match(/"([^"]{100,2000}[.!?])"/g);
-    if (quoteMatches && quoteMatches.length > 0) {
-      const lastQuote = quoteMatches[quoteMatches.length - 1];
-      const extracted = lastQuote.replace(/"/g, '').trim();
-      if (!promptKeywords.some(kw => extracted.includes(kw))) {
-        return finalizeLinkedInPost(extracted, topic);
-      }
+  // ✅ Meta-instruction 關鍵字
+  const metaKeywords = [
+    'We need to produce',
+    'We need to write',
+    'Thinking',
+    'Step 1:',
+    'Step 2:',
+    'Requirements:',
+    'Format your response',
+    'Output ONLY'
+  ];
+
+  // ✅ 優先：提取 "FINAL POST:" 後的內容
+  const finalPostMatch = content.match(/FINAL POST:\s*(.+?)$/is);
+  if (finalPostMatch) {
+    const extracted = finalPostMatch[1].trim();
+    console.log('[INFO] Extracted from FINAL POST marker');
+    return validateAndFinalizePost(extracted, topic, metaKeywords);
+  }
+
+  // ✅ 次選：提取引號中的長內容
+  const quoteMatches = content.match(/"([^"]{100,2000}[.!?])"/g);
+  if (quoteMatches && quoteMatches.length > 0) {
+    const lastQuote = quoteMatches[quoteMatches.length - 1];
+    const extracted = lastQuote.replace(/"/g, '').trim();
+    console.log('[INFO] Extracted from quotes');
+    return validateAndFinalizePost(extracted, topic, metaKeywords);
+  }
+
+  // ✅ Fallback
+  console.log('[WARN] Using fallback cleaning');
+  return validateAndFinalizePost(content, topic, metaKeywords);
+}
+
+/**
+ * 驗證並最終處理 LinkedIn 貼文
+ */
+function validateAndFinalizePost(content, topic, metaKeywords) {
+  // ✅ 驗證：檢查 meta-instruction
+  for (const keyword of metaKeywords) {
+    if (content.includes(keyword)) {
+      console.log(`[ERROR] Meta-instruction detected: "${keyword}". Rejecting.`);
+      return null;
     }
+  }
 
-    console.log('[ERROR] Could not extract clean LinkedIn post');
+  // ✅ 驗證：長度檢查
+  if (content.length < 100) {
+    console.log('[ERROR] Content too short. Rejecting.');
     return null;
   }
 
+  console.log('[SUCCESS] Valid LinkedIn post extracted');
   return finalizeLinkedInPost(content, topic);
 }
 
@@ -226,91 +360,105 @@ function finalizeLinkedInPost(content, topic) {
 function cleanReplyContent(content) {
   console.log('[DEBUG] Cleaning reply content, length:', content.length);
 
-  const promptKeywords = ['Requirements:', 'Output ONLY', 'Author:', 'Reply to this'];
+  // ✅ Meta-instruction 關鍵字
+  const metaKeywords = [
+    'We need to reply',
+    'We need to write',
+    'Thinking',
+    'Step 1:',
+    'Step 2:',
+    'Requirements:',
+    'Format your response',
+    'Output ONLY',
+    'Reply to this'
+  ];
 
-  // 如果包含 prompt 關鍵詞，嘗試提取實際回覆
-  if (promptKeywords.some(kw => content.includes(kw))) {
-    console.log('[WARN] Reply contains prompt keywords, extracting...');
-
-    // 策略 1: 提取引號內的內容
-    const quoteMatches = content.match(/"([^"]{30,500}[.!?])"/g);
-    if (quoteMatches && quoteMatches.length > 0) {
-      const lastQuote = quoteMatches[quoteMatches.length - 1];
-      const extracted = lastQuote.replace(/"/g, '').trim();
-      if (!promptKeywords.some(kw => extracted.includes(kw)) && extracted.length >= 50) {
-        console.log('[INFO] Extracted from quotes:', extracted.substring(0, 80) + '...');
-        return extracted.substring(0, 500);
-      }
-    }
-
-    // 策略 2: 查找 "Output ONLY" 後的內容
-    const afterOutput = content.split('Output ONLY the reply text:').pop();
-    if (afterOutput && afterOutput.trim().length >= 30) {
-      const cleaned = afterOutput.trim().split('\n')[0];
-      if (!promptKeywords.some(kw => cleaned.includes(kw)) && cleaned.length >= 50) {
-        console.log('[INFO] Extracted after "Output ONLY":', cleaned.substring(0, 80) + '...');
-        return cleaned.substring(0, 500);
-      }
-    }
-
-    // 策略 3: 提取各種格式的回覆內容
-    const writePatterns = [
-      /Draft:\s*["']([^"']{50,500})["']/i,
-      /Your reply:\s*["']([^"']{50,500})["']/i,
-      /Let's write:\s*["']([^"']{50,500})["']/i,
-      /Here's the reply:\s*["']([^"']{50,500})["']/i,
-      /Reply:\s*["']([^"']{50,500})["']/i,
-      /^["']([^"']{50,500})["']$/m  // 單獨一行的引號內容
-    ];
-
-    for (const pattern of writePatterns) {
-      const match = content.match(pattern);
-      if (match && match[1]) {
-        const extracted = match[1].trim();
-        if (!promptKeywords.some(kw => extracted.includes(kw))) {
-          console.log('[INFO] Extracted using pattern match:', extracted.substring(0, 80) + '...');
-          return extracted.substring(0, 500);
-        }
-      }
-    }
-
-    // 策略 4: 提取最後一個完整句子
-    const sentences = content.split(/[.!?]\s+/);
-    for (let i = sentences.length - 1; i >= 0; i--) {
-      const sentence = sentences[i].trim();
-      if (sentence.length >= 50 && sentence.length <= 500 &&
-          !promptKeywords.some(kw => sentence.includes(kw))) {
-        console.log('[INFO] Extracted last sentence:', sentence.substring(0, 80) + '...');
-        return sentence;
-      }
-    }
-
-    console.log('[ERROR] Could not extract clean reply, returning null');
-    return null;
+  // ✅ 優先：提取 "FINAL REPLY:" 後的內容
+  const finalReplyMatch = content.match(/FINAL REPLY:\s*(.+?)(?:\n|$)/i);
+  if (finalReplyMatch) {
+    const extracted = finalReplyMatch[1].trim();
+    console.log('[INFO] Extracted from FINAL REPLY marker');
+    return validateReply(extracted, metaKeywords);
   }
 
-  // 正常清理
+  // ✅ 次選：提取引號內的內容
+  const quoteMatches = content.match(/"([^"]{30,500}[.!?])"/g);
+  if (quoteMatches && quoteMatches.length > 0) {
+    const lastQuote = quoteMatches[quoteMatches.length - 1];
+    const extracted = lastQuote.replace(/"/g, '').trim();
+    console.log('[INFO] Extracted from quotes');
+    return validateReply(extracted, metaKeywords);
+  }
+
+  // ✅ Fallback
+  console.log('[WARN] Using fallback cleaning');
   const cleaned = content
     .replace(/^["']|["']$/g, '')
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/#\w+/g, '')
-    .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '') // Remove emojis
-    .trim()
-    .substring(0, 300); // Enforce 300 character limit
+    .trim();
 
-  console.log('[INFO] Cleaned reply:', cleaned.substring(0, 80) + '...');
+  return validateReply(cleaned, metaKeywords);
+}
+
+/**
+ * 驗證回覆內容
+ */
+function validateReply(content, metaKeywords) {
+  const cleaned = content.substring(0, 500);
+
+  // ✅ 驗證：檢查 meta-instruction
+  for (const keyword of metaKeywords) {
+    if (cleaned.includes(keyword)) {
+      console.log(`[ERROR] Meta-instruction detected in reply: "${keyword}". Rejecting.`);
+      return null;
+    }
+  }
+
+  // ✅ 驗證：長度檢查
+  if (cleaned.length < 30) {
+    console.log('[ERROR] Reply too short. Rejecting.');
+    return null;
+  }
+
+  console.log('[SUCCESS] Valid reply extracted');
   return cleaned;
+}
+
+/**
+ * 載入 Persona 檔案
+ */
+function loadPersona(personaPath) {
+  try {
+    if (fs.existsSync(personaPath)) {
+      return fs.readFileSync(personaPath, 'utf-8');
+    }
+    console.error(`[ERROR] Persona file not found: ${personaPath}`);
+  } catch (error) {
+    console.error(`[ERROR] Failed to load persona: ${error.message}`);
+  }
+  return null;
 }
 
 /**
  * 隨機選擇主題
  */
 function selectRandomTopic(topics) {
-  return topics[Math.floor(Math.random() * topics.length)];
+  // 如果沒有傳入 topics，使用預設主題列表
+  const defaultTopics = [
+    'Enterprise AI',
+    'On-Premise AI',
+    'AI Product Strategy',
+    'Startup Journey',
+    'Product Management'
+  ];
+
+  const topicsToUse = topics || defaultTopics;
+  return topicsToUse[Math.floor(Math.random() * topicsToUse.length)];
 }
 
 module.exports = {
+  loadPersona,
   generateLinkedInPost,
   generateLinkedInReply,
   selectRandomTopic,

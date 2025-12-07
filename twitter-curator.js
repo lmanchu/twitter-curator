@@ -17,9 +17,100 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const { generateOriginalTweet, generateReply, selectRandomTopic } = require('./content-generator');
+const { generateOriginalTweet, generateReply, generateInterestReply, generateTrackedReply, selectRandomTopic, selectWeightedTopic } = require('./content-generator');
 
 puppeteer.use(StealthPlugin());
+
+// ========================================
+// 解析追蹤帳號檔案
+// ========================================
+
+function parseTrackedAccounts() {
+  try {
+    const filePath = config.PATHS.tracked_accounts;
+    if (!fs.existsSync(filePath)) {
+      console.log('[INFO] No tracked-accounts.md found');
+      return { twitter: [], linkedin: [] };
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n');
+
+    const twitter = [];
+    const linkedin = [];
+    let currentSection = null;
+    let currentCategory = null;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // 跳過空行
+      if (!trimmed) continue;
+
+      // 先檢測 section headers (## 開頭)
+      if (trimmed.startsWith('## ')) {
+        if (trimmed === '## Twitter Accounts') {
+          currentSection = 'twitter';
+        } else if (trimmed === '## LinkedIn Accounts') {
+          currentSection = 'linkedin';
+        } else if (trimmed === '## Notes') {
+          currentSection = null;  // 停止解析
+        } else {
+          // 其他 ## 標題，保持當前 section
+        }
+        continue;
+      }
+
+      // 檢測 category (### 開頭)
+      if (trimmed.startsWith('### ')) {
+        currentCategory = trimmed.replace('### ', '').toLowerCase();
+        continue;
+      }
+
+      // 跳過註解 (# 開頭但不是 ##/###)
+      if (trimmed.startsWith('#')) continue;
+
+      // 跳過其他 markdown 語法
+      if (trimmed.startsWith('---') || trimmed.startsWith('- ')) continue;
+
+      // 解析帳號
+      if (currentSection === 'twitter') {
+        const username = trimmed.replace(/^@/, '').trim();
+        if (username && !username.includes(' ')) {
+          twitter.push({
+            username,
+            category: currentCategory || 'general',
+            priority: getPriority(currentCategory)
+          });
+        }
+      } else if (currentSection === 'linkedin') {
+        const username = trimmed.trim();
+        if (username && !username.includes(' ')) {
+          linkedin.push({
+            username,
+            category: currentCategory || 'general',
+            priority: getPriority(currentCategory)
+          });
+        }
+      }
+    }
+
+    console.log(`[INFO] Parsed tracked accounts: ${twitter.length} Twitter, ${linkedin.length} LinkedIn`);
+    return { twitter, linkedin };
+
+  } catch (error) {
+    console.error('[ERROR] Failed to parse tracked accounts:', error.message);
+    return { twitter: [], linkedin: [] };
+  }
+}
+
+function getPriority(category) {
+  if (!category) return 3;
+  if (category.includes('vc') || category.includes('investor')) return 1;
+  if (category.includes('leader') || category.includes('ai')) return 2;
+  if (category.includes('founder')) return 3;
+  return 4;
+}
 
 // ========================================
 // 日誌系統
@@ -130,6 +221,20 @@ function incrementReplyCount() {
 function randomDelay(min = config.DELAYS.min, max = config.DELAYS.max) {
   const delay = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+// ========================================
+// 計算文本相似度 (簡單的 Jaccard 相似度)
+// ========================================
+
+function calculateSimilarity(text1, text2) {
+  const words1 = new Set(text1.toLowerCase().split(/\s+/));
+  const words2 = new Set(text2.toLowerCase().split(/\s+/));
+
+  const intersection = new Set([...words1].filter(x => words2.has(x)));
+  const union = new Set([...words1, ...words2]);
+
+  return intersection.size / union.size;
 }
 
 // ========================================
@@ -321,6 +426,177 @@ async function searchRelevantTweets(page) {
 }
 
 // ========================================
+// 搜尋興趣相關推文 (Anime/SciFi)
+// ========================================
+
+async function searchInterestTweets(page) {
+  try {
+    const interestConfig = config.INTEREST_ENGAGEMENT;
+    if (!interestConfig || !interestConfig.enabled) {
+      log('Interest engagement not enabled');
+      return [];
+    }
+
+    log('🎬 Searching for interest-based tweets (Anime/SciFi)...');
+
+    // 決定搜尋策略：50% 搜尋官方帳號，50% 搜尋關鍵詞
+    const searchMethod = Math.random() < 0.5 ? 'account' : 'keyword';
+
+    let searchUrl;
+
+    if (searchMethod === 'account' && interestConfig.official_accounts && interestConfig.official_accounts.length > 0) {
+      // 隨機選擇一個官方帳號
+      const accounts = [...(interestConfig.official_accounts || []), ...(interestConfig.creator_accounts || [])];
+      const account = accounts[Math.floor(Math.random() * accounts.length)];
+      log(`Searching tweets from @${account}`);
+      searchUrl = `https://twitter.com/search?q=from:${account}&f=live`;
+    } else if (interestConfig.keywords && interestConfig.keywords.length > 0) {
+      // 隨機選擇一個關鍵詞
+      const keyword = interestConfig.keywords[Math.floor(Math.random() * interestConfig.keywords.length)];
+      log(`Searching for interest keyword: "${keyword}"`);
+      searchUrl = `https://twitter.com/search?q=${encodeURIComponent(keyword)}&f=live`;
+    } else {
+      log('No interest accounts or keywords configured');
+      return [];
+    }
+
+    await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+    await randomDelay(3000, 5000);
+
+    // 等待推文載入
+    try {
+      await page.waitForSelector('article', { timeout: 10000 });
+    } catch (e) {
+      log('No articles found for interest search');
+      return [];
+    }
+
+    // 提取推文
+    const tweets = await page.evaluate(() => {
+      const articles = Array.from(document.querySelectorAll('article'));
+
+      return articles.slice(0, 15).map(article => {
+        try {
+          const authorElement = article.querySelector('[data-testid="User-Name"]');
+          const author = authorElement ? authorElement.textContent : 'Unknown';
+
+          const tweetElement = article.querySelector('[data-testid="tweetText"]');
+          const text = tweetElement ? tweetElement.textContent : '';
+
+          const linkElement = article.querySelector('a[href*="/status/"]');
+          const tweetId = linkElement ? linkElement.href.split('/status/')[1].split('?')[0] : null;
+
+          return {
+            tweetId,
+            author,
+            text,
+            isInterestBased: true,  // 標記為興趣導向
+            timestamp: new Date().toISOString()
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(t => t && t.tweetId && t.text);
+    });
+
+    log(`🎬 Found ${tweets.length} interest-based tweets`);
+    return tweets;
+
+  } catch (error) {
+    log(`Error searching interest tweets: ${error.message}`, 'ERROR');
+    return [];
+  }
+}
+
+// ========================================
+// 搜尋追蹤帳號推文 (VCs, Influencers)
+// ========================================
+
+async function searchTrackedAccountTweets(page) {
+  try {
+    const trackedConfig = config.TRACKED_ACCOUNTS;
+    if (!trackedConfig || !trackedConfig.enabled) {
+      log('Tracked accounts not enabled');
+      return [];
+    }
+
+    const { twitter: trackedAccounts } = parseTrackedAccounts();
+    if (trackedAccounts.length === 0) {
+      log('No tracked Twitter accounts found');
+      return [];
+    }
+
+    log('🎯 Searching for tweets from tracked accounts...');
+
+    // 按優先級排序，優先選擇高優先級帳號
+    const sortedAccounts = trackedAccounts.sort((a, b) => a.priority - b.priority);
+
+    // 隨機選擇一個帳號（偏向高優先級）
+    // 使用加權隨機：priority 1 有 4x 機率，priority 2 有 2x 機率
+    const weightedAccounts = [];
+    for (const account of sortedAccounts) {
+      const weight = Math.max(1, 5 - account.priority);  // priority 1 = weight 4, priority 4 = weight 1
+      for (let i = 0; i < weight; i++) {
+        weightedAccounts.push(account);
+      }
+    }
+
+    const selectedAccount = weightedAccounts[Math.floor(Math.random() * weightedAccounts.length)];
+    log(`🎯 Selected tracked account: @${selectedAccount.username} (${selectedAccount.category}, priority ${selectedAccount.priority})`);
+
+    // 搜尋該帳號的最新推文
+    const searchUrl = `https://twitter.com/search?q=from:${selectedAccount.username}&f=live`;
+    await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+    await randomDelay(3000, 5000);
+
+    // 等待推文載入
+    try {
+      await page.waitForSelector('article', { timeout: 10000 });
+    } catch (e) {
+      log(`No tweets found from @${selectedAccount.username}`);
+      return [];
+    }
+
+    // 提取推文
+    const tweets = await page.evaluate((accountInfo) => {
+      const articles = Array.from(document.querySelectorAll('article'));
+
+      return articles.slice(0, 10).map(article => {
+        try {
+          const authorElement = article.querySelector('[data-testid="User-Name"]');
+          const author = authorElement ? authorElement.textContent : 'Unknown';
+
+          const tweetElement = article.querySelector('[data-testid="tweetText"]');
+          const text = tweetElement ? tweetElement.textContent : '';
+
+          const linkElement = article.querySelector('a[href*="/status/"]');
+          const tweetId = linkElement ? linkElement.href.split('/status/')[1].split('?')[0] : null;
+
+          return {
+            tweetId,
+            author,
+            text,
+            isTrackedAccount: true,
+            trackedCategory: accountInfo.category,
+            trackedPriority: accountInfo.priority,
+            timestamp: new Date().toISOString()
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(t => t && t.tweetId && t.text);
+    }, selectedAccount);
+
+    log(`🎯 Found ${tweets.length} tweets from @${selectedAccount.username}`);
+    return tweets;
+
+  } catch (error) {
+    log(`Error searching tracked account tweets: ${error.message}`, 'ERROR');
+    return [];
+  }
+}
+
+// ========================================
 // 篩選值得回覆的推文
 // ========================================
 
@@ -329,6 +605,12 @@ function filterTweetsForReply(tweets) {
   const repliedIds = new Set(repliedTweets.map(t => t.tweetId));
 
   const filtered = tweets.filter(tweet => {
+    // ✅ 過濾自己的推文
+    if (tweet.author && (tweet.author.includes('lmanchu') || tweet.author.includes('@lmanchu'))) {
+      log(`Skipping own tweet from @${tweet.author}`, 'INFO');
+      return false;
+    }
+
     // 已回覆過
     if (repliedIds.has(tweet.tweetId)) {
       return false;
@@ -465,7 +747,10 @@ async function main() {
     if (canPost()) {
       log('\n--- Generating original tweet ---');
 
-      const topic = selectRandomTopic(config.TOPICS);
+      // 使用加權主題選擇（如果有 TOPIC_CATEGORIES）
+      const topic = config.TOPIC_CATEGORIES
+        ? selectWeightedTopic(config.TOPIC_CATEGORIES)
+        : selectRandomTopic(config.TOPICS);
       log(`Selected topic: ${topic}`);
 
       const tweetText = await generateOriginalTweet(persona, topic, config.GEMINI_API_KEY);
@@ -479,38 +764,129 @@ async function main() {
     }
 
     // ========================================
-    // 回覆 2 則推文
+    // 回覆 2 則推文 (包含追蹤帳號和興趣導向回覆)
     // ========================================
 
     if (canReply()) {
       log('\n--- Finding tweets to reply to ---');
 
+      // 決定回覆類型
+      const trackedConfig = config.TRACKED_ACCOUNTS;
+      const interestConfig = config.INTEREST_ENGAGEMENT;
+
+      // 優先級：追蹤帳號 > 興趣 > 一般
+      // 追蹤帳號：1/3 機率 (33%)
+      // 興趣：1/5 機率 (20%)
+      const includeTrackedReply = trackedConfig &&
+                                  trackedConfig.enabled &&
+                                  Math.random() * trackedConfig.ratio < 1;
+
+      const includeInterestReply = !includeTrackedReply &&  // 如果已經有追蹤帳號回覆，就不加興趣回覆
+                                   interestConfig &&
+                                   interestConfig.enabled &&
+                                   Math.random() * interestConfig.ratio < 1;
+
+      let allTweetsToReply = [];
+
+      // 搜尋一般推文
       const tweets = await searchRelevantTweets(page);
       const worthReplyingTo = filterTweetsForReply(tweets);
 
-      const tweetsToReply = worthReplyingTo.slice(0, config.REPLIES_PER_HOUR);
+      if (includeTrackedReply) {
+        log('🎯 This round includes a tracked account reply (VC/Influencer)');
 
-      log(`Will reply to ${tweetsToReply.length} tweets`);
+        // 搜尋追蹤帳號推文
+        const trackedTweets = await searchTrackedAccountTweets(page);
+        const filteredTrackedTweets = filterTweetsForReply(trackedTweets);
 
-      let successCount = 0;
-      for (const tweet of tweetsToReply) {
-        log(`\n--- Processing tweet from @${tweet.author} ---`);
-        log(`Tweet: ${tweet.text.substring(0, 100)}...`);
-
-        const replyText = await generateReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY);
-
-        if (replyText) {
-          const success = await replyToTweet(page, tweet, replyText);
-          if (success) {
-            successCount++;
-          }
-
-          // 延遲避免被偵測
-          await randomDelay(config.DELAYS.between_actions, config.DELAYS.between_actions + 5000);
+        if (filteredTrackedTweets.length > 0) {
+          // 取 1 則追蹤帳號推文 + 1 則一般推文
+          allTweetsToReply = [
+            filteredTrackedTweets[0],  // 追蹤帳號推文
+            ...worthReplyingTo.slice(0, config.REPLIES_PER_HOUR - 1)  // 其餘一般推文
+          ];
+        } else {
+          log('No tracked account tweets found, falling back to regular tweets');
+          allTweetsToReply = worthReplyingTo.slice(0, config.REPLIES_PER_HOUR);
         }
+      } else if (includeInterestReply) {
+        log('🎬 This round includes an interest-based reply');
+
+        // 搜尋興趣相關推文
+        const interestTweets = await searchInterestTweets(page);
+        const filteredInterestTweets = filterTweetsForReply(interestTweets);
+
+        if (filteredInterestTweets.length > 0) {
+          // 取 1 則興趣推文 + 1 則一般推文
+          allTweetsToReply = [
+            filteredInterestTweets[0],  // 興趣推文
+            ...worthReplyingTo.slice(0, config.REPLIES_PER_HOUR - 1)  // 其餘一般推文
+          ];
+        } else {
+          log('No interest tweets found, falling back to regular tweets');
+          allTweetsToReply = worthReplyingTo.slice(0, config.REPLIES_PER_HOUR);
+        }
+      } else {
+        allTweetsToReply = worthReplyingTo.slice(0, config.REPLIES_PER_HOUR);
       }
 
-      log(`\n=== Completed: ${successCount}/${tweetsToReply.length} replies sent ===`);
+      log(`Will reply to ${allTweetsToReply.length} tweets`);
+
+      let successCount = 0;
+      let skippedCount = 0;
+      for (const tweet of allTweetsToReply) {
+        const isTracked = tweet.isTrackedAccount || false;
+        const isInterest = tweet.isInterestBased || false;
+        const emoji = isTracked ? '🎯' : (isInterest ? '🎬' : '💬');
+        const label = isTracked ? '(Tracked)' : (isInterest ? '(Interest)' : '');
+        log(`\n--- ${emoji} Processing tweet from @${tweet.author} ${label} ---`);
+        log(`Tweet: ${tweet.text.substring(0, 100)}...`);
+
+        // 根據推文類型選擇回覆生成器
+        let replyText;
+        if (isTracked && trackedConfig) {
+          replyText = await generateTrackedReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY, trackedConfig, tweet.trackedCategory);
+        } else if (isInterest && interestConfig) {
+          replyText = await generateInterestReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY, interestConfig);
+        } else {
+          replyText = await generateReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY);
+        }
+
+        // ✅ 驗證回覆內容
+        if (!replyText) {
+          log(`⚠️  Skipped: Reply generation failed`, 'WARN');
+          skippedCount++;
+          continue;
+        }
+
+        // ✅ 驗證回覆不等於原推文
+        const cleanOriginal = tweet.text.trim().substring(0, 200);
+        const cleanReply = replyText.trim().substring(0, 200);
+        if (cleanReply === cleanOriginal) {
+          log(`⚠️  Skipped: Reply is identical to original tweet`, 'WARN');
+          skippedCount++;
+          continue;
+        }
+
+        // ✅ 驗證回覆不包含原推文的大部分內容
+        const similarity = calculateSimilarity(cleanOriginal, cleanReply);
+        if (similarity > 0.8) {
+          log(`⚠️  Skipped: Reply too similar to original (${(similarity * 100).toFixed(0)}% match)`, 'WARN');
+          skippedCount++;
+          continue;
+        }
+
+        // ✅ 發送回覆
+        const success = await replyToTweet(page, tweet, replyText);
+        if (success) {
+          successCount++;
+        }
+
+        // 延遲避免被偵測
+        await randomDelay(config.DELAYS.between_actions, config.DELAYS.between_actions + 5000);
+      }
+
+      log(`\n=== Completed: ${successCount} sent, ${skippedCount} skipped out of ${allTweetsToReply.length} tweets ===`);
     } else {
       log('Skipping replies - daily limit reached');
     }

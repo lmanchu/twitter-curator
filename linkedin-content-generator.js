@@ -62,10 +62,84 @@ function generateHashtags(topic) {
 }
 
 /**
+ * 身份池 - 避免每篇貼文都提 IrisGo
+ * 根據主題類型選擇適當的身份
+ */
+const IDENTITY_POOLS = {
+  // 產業觀察類 - 不提公司 (40%)
+  industry: [
+    'Lman, a tech entrepreneur and AI observer',
+    'Lman, startup founder with 10+ years in tech',
+    'Lman, AI/blockchain veteran and industry commentator'
+  ],
+  // 個人洞察類 - 輕描淡寫 (30%)
+  personal: [
+    'Lman, serial entrepreneur and lifelong learner',
+    'Lman, tech founder sharing lessons from the trenches',
+    'Lman, startup builder and productivity enthusiast'
+  ],
+  // 產品相關類 - 可提公司 (20%)
+  product: [
+    'Lman (building privacy-first AI at IrisGo.AI)',
+    'Lman, Co-Founder at IrisGo.AI'
+  ],
+  // 技術深度類 - 專家身份 (10%)
+  technical: [
+    'Lman, on-premise AI advocate and builder',
+    'Lman, former blockchain founder turned AI entrepreneur'
+  ]
+};
+
+/**
+ * 主題分類 - 決定使用哪種身份
+ */
+function categorizeTopicType(topic) {
+  const topicLower = topic.toLowerCase();
+
+  // 產品相關 - 可以提 IrisGo
+  if (topicLower.includes('irisgo') ||
+      topicLower.includes('on-premise ai') ||
+      topicLower.includes('privacy-first') ||
+      topicLower.includes('personal ai assistant')) {
+    return 'product';
+  }
+
+  // 技術深度
+  if (topicLower.includes('llm') ||
+      topicLower.includes('edge ai') ||
+      topicLower.includes('local-first')) {
+    return 'technical';
+  }
+
+  // 個人成長類
+  if (topicLower.includes('lesson') ||
+      topicLower.includes('failure') ||
+      topicLower.includes('mental health') ||
+      topicLower.includes('productivity') ||
+      topicLower.includes('reading')) {
+    return 'personal';
+  }
+
+  // 默認：產業觀察
+  return 'industry';
+}
+
+/**
+ * 選擇身份
+ */
+function selectIdentity(topic) {
+  const category = categorizeTopicType(topic);
+  const pool = IDENTITY_POOLS[category];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
  * 使用 Ollama 生成 LinkedIn 原創貼文
  */
 async function generateLinkedInPost(persona, topic) {
   const personaSummary = extractPersonaSummary(persona);
+  const identity = selectIdentity(topic);
+  const topicType = categorizeTopicType(topic);
 
   const styles = [
     'Share a professional insight with concrete examples',
@@ -79,7 +153,12 @@ async function generateLinkedInPost(persona, topic) {
   ];
   const randomStyle = styles[Math.floor(Math.random() * styles.length)];
 
-  const prompt = `Write a professional LinkedIn post as Lman (Co-Founder at IrisGo.AI).
+  // 根據主題類型決定是否可以提 IrisGo
+  const companyMentionRule = topicType === 'product'
+    ? '- You MAY mention IrisGo.AI naturally if relevant'
+    : '- Do NOT mention any company name - focus on general insights';
+
+  const prompt = `Write a professional LinkedIn post as ${identity}.
 
 Topic: ${topic}
 Style: ${randomStyle}
@@ -96,6 +175,7 @@ Requirements for final post:
 - End with a question or call-to-action
 - Use paragraph breaks for readability
 - 3-5 relevant hashtags at the end
+${companyMentionRule}
 
 Format your response as:
 FINAL POST: [your actual LinkedIn post here]`;
@@ -155,47 +235,56 @@ function getLinkedInAnimeAnalogy(postText) {
 }
 
 /**
+ * 回覆用的身份池（更簡潔）
+ */
+const REPLY_IDENTITIES = [
+  'Lman, a tech entrepreneur',
+  'Lman, startup founder',
+  'Lman, AI enthusiast and builder',
+  'Lman, product-focused founder'
+];
+
+/**
  * 使用 Ollama 生成 LinkedIn 回覆
  */
 async function generateLinkedInReply(postText, postAuthor, persona) {
+  // 隨機選擇身份（回覆不需要一直提公司）
+  const identity = REPLY_IDENTITIES[Math.floor(Math.random() * REPLY_IDENTITIES.length)];
+
   // 檢查是否使用動漫類比
   const animeAnalogy = getLinkedInAnimeAnalogy(postText);
 
   let prompt;
   if (animeAnalogy) {
     // 有動漫類比的版本
-    prompt = `You are Lman, Co-Founder at IrisGo.AI. Write a professional LinkedIn comment reply.
+    prompt = `You are ${identity}. Write a professional LinkedIn comment reply.
 
-Post to reply to: "${postText}"
+Post from @${postAuthor}: "${postText}"
 
 Include this insight naturally in your reply: "${animeAnalogy}"
 
-Step 1: Think about how to incorporate the insight naturally (internal)
-Step 2: Write your final reply
-
 Requirements:
-- 200-350 characters
-- Professional, concise, add value
+- Write 2-3 sentences (150-250 characters)
+- Add genuine value or insight
+- Be conversational and professional
+- Do NOT mention any company name
 - No hashtags
 
-Format your response as:
-FINAL REPLY: [your actual LinkedIn comment here]`;
+Output ONLY your comment text, nothing else.`;
   } else {
     // 標準版本
-    prompt = `You are Lman, Co-Founder at IrisGo.AI. Write a professional LinkedIn comment reply.
+    prompt = `You are ${identity}. Write a professional LinkedIn comment reply.
 
-Post to reply to: "${postText}"
-
-Step 1: Think about the best response approach (internal)
-Step 2: Write your final reply
+Post from @${postAuthor}: "${postText}"
 
 Requirements:
-- 150-300 characters
-- Professional, concise, respectful
+- Write 2-3 sentences (100-200 characters)
+- Add value: agree/disagree with insight, share experience, or ask thoughtful question
+- Be conversational and authentic
+- Do NOT mention any company name
 - No hashtags
 
-Format your response as:
-FINAL REPLY: [your actual LinkedIn comment here]`;
+Output ONLY your comment text, nothing else.`;
   }
 
   try {
@@ -313,22 +402,85 @@ function cleanLinkedInContent(content, topic) {
  * 驗證並最終處理 LinkedIn 貼文
  */
 function validateAndFinalizePost(content, topic, metaKeywords) {
+  // ✅ Step 0: 先用 stripThinkingBlock 清理思考過程
+  let cleaned = stripThinkingBlock(content);
+
   // ✅ 驗證：檢查 meta-instruction
   for (const keyword of metaKeywords) {
-    if (content.includes(keyword)) {
+    if (cleaned.includes(keyword)) {
       console.log(`[ERROR] Meta-instruction detected: "${keyword}". Rejecting.`);
       return null;
     }
   }
 
   // ✅ 驗證：長度檢查
-  if (content.length < 100) {
+  if (cleaned.length < 100) {
     console.log('[ERROR] Content too short. Rejecting.');
     return null;
   }
 
   console.log('[SUCCESS] Valid LinkedIn post extracted');
-  return finalizeLinkedInPost(content, topic);
+  return finalizeLinkedInPost(cleaned, topic);
+}
+
+/**
+ * 過濾掉 LLM 的思考過程區塊 (v2.2)
+ * 完整版本，與 linkedin-fact-checker-ollama.js 保持同步
+ */
+function stripThinkingBlock(content) {
+  let cleaned = content;
+
+  // 1. 移除 "Thinking..." 到 "...done thinking." 的區塊
+  cleaned = cleaned.replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '');
+
+  // 2. 移除 "<thinking>" 到 "</thinking>" 的 XML 標籤形式
+  cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>\s*/gi, '');
+
+  // 3. 移除 "[post]" 開頭的指令行 (整行)
+  cleaned = cleaned.replace(/^\[post\].*$/gim, '');
+
+  // 4. 移除 "We need..." 開頭的指令行 (整行)
+  cleaned = cleaned.replace(/^We need\s+(to\s+)?(produce|write|ensure|create|make).*$/gim, '');
+
+  // 5. 移除 "Let's..." 開頭的思考行 (整行)
+  cleaned = cleaned.replace(/^Let's\s+(aim|count|draft|approximate|see|check|think|write|plan|structure|organize|ensure|make sure|keep|stay|target|shoot for|produce).*$/gim, '');
+
+  // 6. 移除字數/段落計算行 (整行，包含數字範圍的)
+  cleaned = cleaned.replace(/^.*\d+[-–]\d+\s*characters?.*$/gim, '');
+  cleaned = cleaned.replace(/^.*~?\d+\s*characters?\.?\s*$/gim, '');
+  cleaned = cleaned.replace(/^.*paragraph breaks?:.*$/gim, '');
+  cleaned = cleaned.replace(/^.*\d+\s*paragraphs?.*$/gim, '');
+  cleaned = cleaned.replace(/^.*need to keep within.*$/gim, '');
+  cleaned = cleaned.replace(/^.*each paragraph.*\d+\s*chars?.*$/gim, '');
+  cleaned = cleaned.replace(/^.*\d+\s*char(s)?\s*(per|each).*$/gim, '');
+
+  // 7. 移除純指令短句 (整行)
+  cleaned = cleaned.replace(/^(Count roughly|That's hook|That's about|Structure:|Format:|Note:|Remember:).*$/gim, '');
+
+  // 8. 移除結構標籤前綴但保留內容 (Hook:, CTA:, etc.)
+  cleaned = cleaned.replace(/\b(Hook:|End with question:|Personal insight:|Then story:|The challenge:|Solution:|Result:)\s*/gim, '');
+
+  // 9. 移除行內的指令片段 (不刪除整行)
+  cleaned = cleaned.replace(/\s*Paragraph breaks?:\s*\d+\s*paragraphs?\.?\s*/gi, ' ');
+  cleaned = cleaned.replace(/\s*\d+-\d+\s*hashtags?\.?\s*/gi, ' ');
+  cleaned = cleaned.replace(/\s*CTA:\s*["']?Share your experiences!?["']?\s*/gi, '\n\nShare your experiences!');
+
+  // 10. 移除行尾的 meta 註解
+  cleaned = cleaned.replace(/\s*That's\s+(hook|about|the\s+challenge|solution|result)\.?\s*$/gim, '');
+
+  // 11. 移除獨立的數字標記
+  cleaned = cleaned.replace(/\s+\d{3,4}\.\s*/g, ' ');
+
+  // 12. 清理重複的空格
+  cleaned = cleaned.replace(/  +/g, ' ');
+
+  // 13. 清理多餘空行
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  // 14. 移除開頭結尾空白
+  cleaned = cleaned.trim();
+
+  return cleaned;
 }
 
 /**
@@ -360,45 +512,84 @@ function finalizeLinkedInPost(content, topic) {
 function cleanReplyContent(content) {
   console.log('[DEBUG] Cleaning reply content, length:', content.length);
 
-  // ✅ Meta-instruction 關鍵字
+  // ✅ Meta-instruction 關鍵字（需要過濾的）
   const metaKeywords = [
     'We need to reply',
     'We need to write',
+    'We should',
+    'Let me',
+    'I will',
+    'Here is',
+    'Here\'s my',
     'Thinking',
     'Step 1:',
     'Step 2:',
     'Requirements:',
     'Format your response',
     'Output ONLY',
-    'Reply to this'
+    'Reply to this',
+    'Post from @'
   ];
 
+  // ✅ 首先移除 thinking 區塊
+  let cleaned = content
+    .replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>\s*/gi, '')
+    .trim();
+
   // ✅ 優先：提取 "FINAL REPLY:" 後的內容
-  const finalReplyMatch = content.match(/FINAL REPLY:\s*(.+?)(?:\n|$)/i);
+  const finalReplyMatch = cleaned.match(/FINAL REPLY:\s*(.+?)(?:\n|$)/i);
   if (finalReplyMatch) {
     const extracted = finalReplyMatch[1].trim();
     console.log('[INFO] Extracted from FINAL REPLY marker');
     return validateReply(extracted, metaKeywords);
   }
 
-  // ✅ 次選：提取引號內的內容
-  const quoteMatches = content.match(/"([^"]{30,500}[.!?])"/g);
-  if (quoteMatches && quoteMatches.length > 0) {
-    const lastQuote = quoteMatches[quoteMatches.length - 1];
-    const extracted = lastQuote.replace(/"/g, '').trim();
-    console.log('[INFO] Extracted from quotes');
-    return validateReply(extracted, metaKeywords);
+  // ✅ 次選：如果內容以引號開頭結尾，直接提取
+  if (cleaned.startsWith('"') && cleaned.includes('"')) {
+    const quoteEnd = cleaned.lastIndexOf('"');
+    if (quoteEnd > 1) {
+      const extracted = cleaned.substring(1, quoteEnd).trim();
+      if (extracted.length >= 30) {
+        console.log('[INFO] Extracted from outer quotes');
+        return validateReply(extracted, metaKeywords);
+      }
+    }
   }
 
-  // ✅ Fallback
+  // ✅ 第三選：提取引號內的內容（最長的有效引號）
+  const quoteMatches = content.match(/"([^"]{30,500})"/g);
+  if (quoteMatches && quoteMatches.length > 0) {
+    // 選擇最長的引號內容
+    const validQuotes = quoteMatches
+      .map(q => q.replace(/"/g, '').trim())
+      .filter(q => !metaKeywords.some(kw => q.includes(kw)));
+
+    if (validQuotes.length > 0) {
+      const longest = validQuotes.reduce((a, b) => a.length > b.length ? a : b);
+      console.log('[INFO] Extracted from quotes (longest valid)');
+      return validateReply(longest, metaKeywords);
+    }
+  }
+
+  // ✅ 第四選：如果內容很短且乾淨，直接使用
+  if (cleaned.length >= 30 && cleaned.length <= 500 &&
+      !metaKeywords.some(kw => cleaned.includes(kw))) {
+    console.log('[INFO] Using cleaned content directly (short and clean)');
+    return validateReply(cleaned, metaKeywords);
+  }
+
+  // ✅ Fallback：清理並提取最後一段有意義的文字
   console.log('[WARN] Using fallback cleaning');
-  const cleaned = content
+  const lines = cleaned.split('\n').filter(l => l.trim().length > 20);
+  const lastMeaningfulLine = lines[lines.length - 1] || cleaned;
+
+  const finalCleaned = lastMeaningfulLine
     .replace(/^["']|["']$/g, '')
-    .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return validateReply(cleaned, metaKeywords);
+  return validateReply(finalCleaned, metaKeywords);
 }
 
 /**
@@ -441,20 +632,56 @@ function loadPersona(personaPath) {
 }
 
 /**
- * 隨機選擇主題
+ * 隨機選擇主題（舊版，向後兼容）
  */
 function selectRandomTopic(topics) {
-  // 如果沒有傳入 topics，使用預設主題列表
   const defaultTopics = [
-    'Enterprise AI',
-    'On-Premise AI',
-    'AI Product Strategy',
-    'Startup Journey',
-    'Product Management'
+    'AI industry trends and observations',
+    'Startup lessons from the trenches',
+    'Productivity systems that actually work',
+    'Building privacy-first AI products'
   ];
 
   const topicsToUse = topics || defaultTopics;
   return topicsToUse[Math.floor(Math.random() * topicsToUse.length)];
+}
+
+/**
+ * 加權隨機選擇主題（新版）
+ * 根據 TOPIC_CATEGORIES 的權重選擇類別，再從類別中隨機選擇主題
+ *
+ * @param {Object} topicCategories - 來自 linkedin-config.js 的 TOPIC_CATEGORIES
+ * @returns {string} 選中的主題
+ */
+function selectWeightedTopic(topicCategories) {
+  if (!topicCategories) {
+    return selectRandomTopic();
+  }
+
+  // 計算總權重
+  const categories = Object.entries(topicCategories);
+  const totalWeight = categories.reduce((sum, [, cat]) => sum + cat.weight, 0);
+
+  // 隨機選擇類別
+  let random = Math.random() * totalWeight;
+  let selectedCategory = null;
+
+  for (const [name, category] of categories) {
+    random -= category.weight;
+    if (random <= 0) {
+      selectedCategory = { name, ...category };
+      break;
+    }
+  }
+
+  // 從選中的類別中隨機選擇主題
+  if (selectedCategory && selectedCategory.topics && selectedCategory.topics.length > 0) {
+    const topic = selectedCategory.topics[Math.floor(Math.random() * selectedCategory.topics.length)];
+    console.log(`[INFO] Selected category: ${selectedCategory.name} (weight: ${selectedCategory.weight}%)`);
+    return topic;
+  }
+
+  return selectRandomTopic();
 }
 
 module.exports = {
@@ -462,6 +689,7 @@ module.exports = {
   generateLinkedInPost,
   generateLinkedInReply,
   selectRandomTopic,
+  selectWeightedTopic,
   extractPersonaSummary,
   generateHashtags
 };

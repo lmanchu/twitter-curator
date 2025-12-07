@@ -10,10 +10,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { execSync } = require('child_process');
 
 // Ollama 配置
 const OLLAMA_MODEL = 'gpt-oss:20b'; // 使用你現有的模型
+const OLLAMA_FALLBACK = 'qwen3-vl:30b'; // Fallback model
 
 // 載入 Ground Truth 資料庫
 function loadGroundTruth() {
@@ -43,53 +44,120 @@ function loadContentGuidelines() {
   return null;
 }
 
-// 調用 Ollama
+// 調用 Ollama HTTP API (非互動式，適合 LaunchAgent)
 async function callOllama(prompt) {
-  return new Promise((resolve, reject) => {
-    const ollama = spawn('ollama', ['run', OLLAMA_MODEL]);
+  const url = 'http://localhost:11434/api/generate';
+  const models = [OLLAMA_MODEL, OLLAMA_FALLBACK];
 
-    let output = '';
-    let errorOutput = '';
+  for (const model of models) {
+    try {
+      const payload = {
+        model: model,
+        prompt: prompt,
+        stream: false,
+        options: {
+          temperature: 0.7,
+          num_predict: 2000,
+          top_p: 0.9,
+        }
+      };
 
-    ollama.stdout.on('data', (data) => {
-      output += data.toString();
-    });
+      // 使用 curl 呼叫 Ollama HTTP API
+      const command = `curl -s -X POST '${url}' \
+        -H 'Content-Type: application/json' \
+        -d '${JSON.stringify(payload).replace(/'/g, "'\\''")}'`;
 
-    ollama.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
+      const response = execSync(command, { encoding: 'utf-8', timeout: 120000 });
+      const data = JSON.parse(response);
 
-    ollama.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Ollama exited with code ${code}: ${errorOutput}`));
-      } else {
-        resolve(output.trim());
+      // gpt-oss model puts content in 'thinking' field
+      if (data.thinking) {
+        console.log(`   [INFO] Using model: ${model}`);
+        return data.thinking;
+      } else if (data.response) {
+        console.log(`   [INFO] Using model: ${model}`);
+        return data.response;
       }
-    });
 
-    // 發送 prompt
-    ollama.stdin.write(prompt);
-    ollama.stdin.end();
-  });
+      throw new Error('No valid response from model');
+
+    } catch (error) {
+      console.log(`   [WARN] Model ${model} failed: ${error.message}, trying next...`);
+      continue;
+    }
+  }
+
+  throw new Error('All Ollama models failed');
+}
+
+/**
+ * 身份池 - 避免每篇貼文都提 IrisGo
+ */
+const IDENTITY_POOLS = {
+  industry: [
+    'Lman, a tech entrepreneur and AI observer',
+    'Lman, startup founder with 10+ years in tech',
+    'Lman, AI/blockchain veteran and industry commentator'
+  ],
+  personal: [
+    'Lman, serial entrepreneur and lifelong learner',
+    'Lman, tech founder sharing lessons from the trenches'
+  ],
+  product: [
+    'Lman (building privacy-first AI at IrisGo.AI)',
+    'Lman, Co-Founder at IrisGo.AI'
+  ],
+  technical: [
+    'Lman, on-premise AI advocate and builder',
+    'Lman, former blockchain founder turned AI entrepreneur'
+  ]
+};
+
+function categorizeTopicType(topic) {
+  const topicLower = topic.toLowerCase();
+  if (topicLower.includes('irisgo') || topicLower.includes('on-premise ai') ||
+      topicLower.includes('privacy-first') || topicLower.includes('personal ai assistant')) {
+    return 'product';
+  }
+  if (topicLower.includes('llm') || topicLower.includes('edge ai') || topicLower.includes('local-first')) {
+    return 'technical';
+  }
+  if (topicLower.includes('lesson') || topicLower.includes('failure') ||
+      topicLower.includes('mental health') || topicLower.includes('productivity')) {
+    return 'personal';
+  }
+  return 'industry';
+}
+
+function selectIdentity(topic) {
+  const category = categorizeTopicType(topic);
+  const pool = IDENTITY_POOLS[category];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // Step 1: 生成草稿（創意層）
 async function generateDraft(topic, context) {
   const groundTruth = loadGroundTruth();
   const guidelines = loadContentGuidelines();
+  const identity = selectIdentity(topic);
+  const topicType = categorizeTopicType(topic);
 
-  const prompt = `You are Lman's LinkedIn content assistant at IrisGo.AI.
+  // 根據主題類型決定是否使用 Ground Truth
+  const useGroundTruth = topicType === 'product' || topicType === 'technical';
+  const companyRule = topicType === 'product'
+    ? '- You MAY mention IrisGo.AI naturally if relevant to the topic'
+    : '- Do NOT mention any company name - focus on general industry insights';
+
+  const prompt = `You are writing a LinkedIn post as ${identity}.
 
 **CRITICAL RULES** (Must follow):
 1. ❌ Never fabricate numbers, case studies, or experiences
 2. ❌ Never create fictional clients, partners, or projects
-3. ✅ Only use facts explicitly documented in the "Ground Truth Database" below
-4. ✅ You may use emphatic language for emotional impact (without changing facts)
-5. ✅ You may discuss future vision (but clearly label as "vision" or "goal")
+3. ✅ You may use emphatic language for emotional impact (without changing facts)
+4. ✅ You may discuss future vision (but clearly label as "vision" or "goal")
+${useGroundTruth ? `5. ✅ You may reference facts from the Ground Truth Database below` : '5. ✅ Focus on general industry observations and personal insights'}
 
-**Ground Truth Database (the only source of truth)**:
-${JSON.stringify(groundTruth, null, 2)}
-
+${useGroundTruth ? `**Ground Truth Database (optional reference)**:\n${JSON.stringify(groundTruth, null, 2)}\n` : ''}
 ${guidelines ? `**Content Guidelines**:\n${guidelines}\n` : ''}
 
 **Topic**: ${topic}
@@ -101,10 +169,7 @@ ${guidelines ? `**Content Guidelines**:\n${guidelines}\n` : ''}
 - Tone: Passionate but honest, professional yet authentic
 - Length: 600-1000 characters
 - Structure: Hook → Core insight → Real examples → Call-to-action
-- If Ground Truth data is insufficient, use conservative phrasing:
-  - "We're exploring..." instead of "We've completed..."
-  - "Early tests show..." instead of "Proven..."
-  - "Our goal is..." instead of "We've achieved..."
+${companyRule}
 
 Generate the LinkedIn post directly, no additional explanation.`;
 
@@ -117,17 +182,61 @@ Generate the LinkedIn post directly, no additional explanation.`;
 }
 
 /**
- * 過濾掉 LLM 的思考過程區塊
+ * 過濾掉 LLM 的思考過程區塊 (v2.2)
+ * 完整版本，與 linkedin-content-generator.js 保持同步
  */
 function stripThinkingBlock(content) {
-  // 移除 "Thinking..." 到 "...done thinking." 的區塊
-  let cleaned = content.replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '');
+  let cleaned = content;
 
-  // 也移除 "<thinking>" 到 "</thinking>" 的 XML 標籤形式
+  // 1. 移除 "Thinking..." 到 "...done thinking." 的區塊
+  cleaned = cleaned.replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '');
+
+  // 2. 移除 "<thinking>" 到 "</thinking>" 的 XML 標籤形式
   cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>\s*/gi, '');
 
-  // 移除開頭的空白
-  cleaned = cleaned.replace(/^\s+/, '');
+  // 3. 移除 "[post]" 開頭的指令行 (整行)
+  cleaned = cleaned.replace(/^\[post\].*$/gim, '');
+
+  // 4. 移除 "We need..." 開頭的指令行 (整行)
+  cleaned = cleaned.replace(/^We need\s+(to\s+)?(produce|write|ensure|create|make).*$/gim, '');
+
+  // 5. 移除 "Let's..." 開頭的思考行 (整行)
+  cleaned = cleaned.replace(/^Let's\s+(aim|count|draft|approximate|see|check|think|write|plan|structure|organize|ensure|make sure|keep|stay|target|shoot for|produce).*$/gim, '');
+
+  // 6. 移除字數/段落計算行 (整行，包含數字範圍的)
+  cleaned = cleaned.replace(/^.*\d+[-–]\d+\s*characters?.*$/gim, '');
+  cleaned = cleaned.replace(/^.*~?\d+\s*characters?\.?\s*$/gim, '');
+  cleaned = cleaned.replace(/^.*paragraph breaks?:.*$/gim, '');
+  cleaned = cleaned.replace(/^.*\d+\s*paragraphs?.*$/gim, '');
+  cleaned = cleaned.replace(/^.*need to keep within.*$/gim, '');
+  cleaned = cleaned.replace(/^.*each paragraph.*\d+\s*chars?.*$/gim, '');
+  cleaned = cleaned.replace(/^.*\d+\s*char(s)?\s*(per|each).*$/gim, '');
+
+  // 7. 移除純指令短句 (整行)
+  cleaned = cleaned.replace(/^(Count roughly|That's hook|That's about|Structure:|Format:|Note:|Remember:).*$/gim, '');
+
+  // 8. 移除結構標籤前綴但保留內容 (Hook:, CTA:, etc.)
+  cleaned = cleaned.replace(/\b(Hook:|End with question:|Personal insight:|Then story:|The challenge:|Solution:|Result:)\s*/gim, '');
+
+  // 9. 移除行內的指令片段 (不刪除整行)
+  cleaned = cleaned.replace(/\s*Paragraph breaks?:\s*\d+\s*paragraphs?\.?\s*/gi, ' ');
+  cleaned = cleaned.replace(/\s*\d+-\d+\s*hashtags?\.?\s*/gi, ' ');
+  cleaned = cleaned.replace(/\s*CTA:\s*["']?Share your experiences!?["']?\s*/gi, '\n\nShare your experiences!');
+
+  // 10. 移除行尾的 meta 註解
+  cleaned = cleaned.replace(/\s*That's\s+(hook|about|the\s+challenge|solution|result)\.?\s*$/gim, '');
+
+  // 11. 移除獨立的數字標記
+  cleaned = cleaned.replace(/\s+\d{3,4}\.\s*/g, ' ');
+
+  // 12. 清理重複的空格
+  cleaned = cleaned.replace(/  +/g, ' ');
+
+  // 13. 清理多餘空行
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  // 14. 移除開頭結尾空白
+  cleaned = cleaned.trim();
 
   return cleaned;
 }

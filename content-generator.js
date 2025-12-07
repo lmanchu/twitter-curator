@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const { execSync } = require('child_process');
 const fs = require('fs');
+const localTracker = require('../bin/local-model-token-tracker.js');
 
 /**
  * 從 Persona 提取關鍵信息
@@ -100,21 +101,53 @@ Output ONLY the tweet text, nothing else:`;
 }
 
 /**
+ * 檢測不當內容 (NSFW/Spam)
+ */
+function isInappropriateContent(text) {
+  const nsfwKeywords = [
+    'sex', 'porn', 'xxx', 'nude', 'naked', 'pussy', 'dick', 'cock',
+    'tesão', 'gostoso', 'delícia', 'rabeta', 'negão', 'esfrega',
+    'onlyfans', 'nsfw', 'adult content'
+  ];
+
+  const spamKeywords = [
+    'free money', 'click here', 'dm me', 'buy now', 'limited offer',
+    'crypto giveaway', 'send me'
+  ];
+
+  const lowerText = text.toLowerCase();
+
+  for (const keyword of [...nsfwKeywords, ...spamKeywords]) {
+    if (lowerText.includes(keyword)) {
+      console.log(`[FILTER] Inappropriate content detected: "${keyword}"`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 使用 Ollama 生成推文回覆
  */
 async function generateReply(tweetText, tweetAuthor, persona, apiKey) {
-  const prompt = `Reply to this tweet as Lman (startup builder, AI/tech expert):
+  // 先檢查原推文是否為不當內容
+  if (isInappropriateContent(tweetText)) {
+    console.log(`[SKIP] Skipping reply to inappropriate content from @${tweetAuthor}`);
+    return null;
+  }
 
-@${tweetAuthor}: "${tweetText}"
+  const prompt = `You are Lman, a tech entrepreneur and AI expert. Write a reply to this tweet.
 
-Requirements:
+Tweet from @${tweetAuthor}: "${tweetText}"
+
+Instructions:
+- Write a helpful, insightful reply
 - Max 280 characters
 - English only
-- No hashtags
-- Conversational, add value
+- Be conversational and add value
 - Technical but friendly
 
-Output ONLY the reply text:`;
+Reply:`;
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);
@@ -126,13 +159,116 @@ Output ONLY the reply text:`;
 }
 
 /**
+ * 使用 Ollama 生成興趣導向回覆 (Anime/SciFi)
+ * 以粉絲身份回覆，展現真實的個人興趣
+ */
+async function generateInterestReply(tweetText, tweetAuthor, persona, apiKey, interestConfig) {
+  // 先檢查原推文是否為不當內容
+  if (isInappropriateContent(tweetText)) {
+    console.log(`[SKIP] Skipping reply to inappropriate content from @${tweetAuthor}`);
+    return null;
+  }
+
+  const replyStyle = interestConfig.reply_style || {};
+  const avoidList = (replyStyle.avoid || []).join(', ');
+  const includeList = (replyStyle.include || []).join(', ');
+
+  const prompt = `You are Lman, a tech entrepreneur who is also a passionate anime/scifi fan. Write a reply to this entertainment tweet.
+
+Tweet from @${tweetAuthor}: "${tweetText}"
+
+Instructions:
+- Write as an enthusiastic fan, NOT as a tech expert
+- Max 280 characters
+- English only
+- Express genuine appreciation or excitement
+- Be friendly and relatable
+- Share what you love about it (favorite scene, character, moment)
+- OK to connect it briefly to tech/AI if natural, but focus on fan appreciation
+- Avoid: ${avoidList || 'spoilers, negativity, controversy'}
+- Include: ${includeList || 'appreciation, favorite moment'}
+
+Reply:`;
+
+  try {
+    const response = await callGeminiAPI(prompt, apiKey);
+    return cleanContent(response);
+  } catch (error) {
+    console.error('Error generating interest reply:', error.message);
+    return null;
+  }
+}
+
+/**
+ * 使用 Ollama 生成針對追蹤帳號的專業回覆
+ * 用於回覆 VCs、意見領袖等你想讓他們注意到你的人
+ */
+async function generateTrackedReply(tweetText, tweetAuthor, persona, apiKey, trackedConfig, category) {
+  // 先檢查原推文是否為不當內容
+  if (isInappropriateContent(tweetText)) {
+    console.log(`[SKIP] Skipping reply to inappropriate content from @${tweetAuthor}`);
+    return null;
+  }
+
+  const replyStyle = trackedConfig.reply_style || {};
+  const avoidList = (replyStyle.avoid || []).join(', ');
+  const includeList = (replyStyle.include || []).join(', ');
+
+  // 根據類別調整策略
+  let categoryGuidance = '';
+  if (category && category.includes('vc') || category && category.includes('investor')) {
+    categoryGuidance = `
+- This is a VC/investor - show business acumen and market insight
+- Demonstrate you understand their perspective on startups
+- Be concise and impactful, VCs are busy`;
+  } else if (category && category.includes('leader')) {
+    categoryGuidance = `
+- This is a tech/AI leader - show technical depth
+- Add a unique perspective they might not have considered
+- Reference specific technical points`;
+  } else if (category && category.includes('founder')) {
+    categoryGuidance = `
+- This is a fellow founder - be relatable
+- Share relevant experience or empathy
+- Build genuine connection`;
+  }
+
+  const prompt = `You are Lman, CoFounder of IrisGo.AI (on-device AI assistant). Write a strategic reply to this influential person's tweet.
+
+Tweet from @${tweetAuthor}: "${tweetText}"
+
+Goal: Get noticed by this person through a thoughtful, valuable reply.
+${categoryGuidance}
+
+Instructions:
+- Max 280 characters
+- English only
+- Add genuine value - share a unique insight or perspective
+- Be professional but not sycophantic
+- Show expertise without being arrogant
+- Ask a thought-provoking question OR share a contrarian insight
+- Avoid: ${avoidList || 'flattery, self-promotion, generic praise'}
+- Include: ${includeList || 'unique perspective, relevant experience'}
+
+Reply:`;
+
+  try {
+    const response = await callGeminiAPI(prompt, apiKey);
+    return cleanContent(response);
+  } catch (error) {
+    console.error('Error generating tracked reply:', error.message);
+    return null;
+  }
+}
+
+/**
  * 調用本地 Ollama API (gpt-oss:20b with fallback)
  */
 async function callGeminiAPI(prompt, apiKey) {
   const url = 'http://localhost:11434/api/generate';
 
-  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3:32b
-  const models = ['gpt-oss:20b', 'qwen3:32b'];
+  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3-vl:30b (MoE)
+  const models = ['gpt-oss:20b', 'qwen3-vl:30b'];
 
   for (const model of models) {
     try {
@@ -153,6 +289,13 @@ async function callGeminiAPI(prompt, apiKey) {
 
       const response = execSync(command, { encoding: 'utf-8', timeout: 60000 });
       const data = JSON.parse(response);
+
+      // ✅ 記錄 Token 使用（從 Ollama API 回應）
+      try {
+        localTracker.recordFromOllamaResponse('twitter-curator', data, model);
+      } catch (err) {
+        console.warn('⚠️  Failed to record local tokens:', err.message);
+      }
 
       // gpt-oss model puts content in 'thinking' field
       if (data.thinking) {
@@ -182,55 +325,109 @@ async function callGeminiAPI(prompt, apiKey) {
 function cleanContent(content) {
   console.log(`[DEBUG] Cleaning content, length: ${content.length}`);
 
-  // 嘗試提取所有引號中的內容
-  const allQuotes = content.match(/"([^"]+)"/g);
+  // ✅ Meta-instruction 關鍵字（需要過濾的）
+  const metaInstructionKeywords = [
+    // Prompt 洩漏
+    'You are Lman',
+    'Reply to this tweet',
+    'Write a reply',
+    'startup builder',
+    'AI/tech expert',
+    'tech entrepreneur',
+    // 思考過程洩漏
+    'We need to reply',
+    'We need to respond',
+    'We should reply',
+    'Let me analyze',
+    'This is explicit',
+    'sexual content',
+    'not allowed',
+    'check policy',
+    // 格式指令洩漏
+    'Step 1:',
+    'Step 2:',
+    'Requirements:',
+    'Format your response',
+    'Output ONLY',
+    'Instructions:',
+    'Max 280'
+  ];
 
+  // ✅ 優先：提取 "FINAL REPLY:" 或 "Reply:" 後的內容
+  const replyMarkers = [
+    /FINAL REPLY:\s*(.+?)(?:\n|$)/i,
+    /^Reply:\s*(.+?)$/im,
+    /\nReply:\s*(.+?)(?:\n|$)/i
+  ];
+
+  for (const pattern of replyMarkers) {
+    const match = content.match(pattern);
+    if (match) {
+      const extracted = match[1].trim();
+      if (extracted.length >= 20) {
+        console.log(`[INFO] Extracted from reply marker: ${extracted.substring(0, 100)}...`);
+        return cleanAndValidate(extracted, metaInstructionKeywords);
+      }
+    }
+  }
+
+  // ✅ 次選：提取引號中的內容
+  const allQuotes = content.match(/"([^"]+)"/g);
   if (allQuotes && allQuotes.length > 0) {
-    // 過濾掉包含 prompt 關鍵字的引號
-    const promptKeywords = ['Topic:', 'Requirements:', 'Output ONLY', 'Max 280', 'Style:', 'Write a tweet', 'CoFounder at'];
+    const promptKeywords = ['Topic:', 'Requirements:', 'Max 280', 'Style:', 'Write a tweet', 'CoFounder at'];
 
     const validQuotes = allQuotes
       .map(q => q.replace(/"/g, '').trim())
       .filter(q => {
-        // 排除太短的（<20 字符）
         if (q.length < 20) return false;
-        // 排除包含 prompt 關鍵字的
         if (promptKeywords.some(kw => q.includes(kw))) return false;
+        if (metaInstructionKeywords.some(kw => q.includes(kw))) return false;
         return true;
       });
 
     if (validQuotes.length > 0) {
-      // 選擇最長的有效內容
       const longest = validQuotes.reduce((a, b) => a.length > b.length ? a : b);
-      const cleaned = longest
-        .replace(/\n+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .substring(0, 280);
-
-      console.log(`[INFO] Extracted tweet: ${cleaned.substring(0, 100)}...`);
-      return cleaned;
+      console.log(`[INFO] Extracted from quotes: ${longest.substring(0, 100)}...`);
+      return cleanAndValidate(longest, metaInstructionKeywords);
     }
   }
 
-  // Fallback: 直接清理原始內容
-  console.log('[WARN] No quoted content found, using fallback cleaning');
+  // ✅ Fallback: 清理原始內容
+  console.log('[WARN] No FINAL REPLY marker or quotes found, using fallback');
   const cleaned = content
     .replace(/^["']|["']$/g, '')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleanAndValidate(cleaned, metaInstructionKeywords);
+}
+
+/**
+ * 清理並驗證最終內容
+ */
+function cleanAndValidate(text, metaInstructionKeywords) {
+  const cleaned = text
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .substring(0, 280);
 
-  // 如果 fallback 內容包含太多 prompt 關鍵字，返回 null
-  const promptKeywords = ['Topic:', 'Requirements:', 'Output ONLY', 'Max 280'];
-  const keywordCount = promptKeywords.filter(kw => cleaned.includes(kw)).length;
+  // ✅ 驗證：如果包含 meta-instruction 關鍵字，返回 null
+  for (const keyword of metaInstructionKeywords) {
+    if (cleaned.includes(keyword)) {
+      console.log(`[ERROR] Meta-instruction detected: "${keyword}" in content. Rejecting.`);
+      return null;
+    }
+  }
 
-  if (keywordCount >= 2) {
-    console.log('[ERROR] Could not extract clean tweet from model output');
+  // ✅ 驗證：如果太短（可能提取失敗）
+  if (cleaned.length < 10) {
+    console.log('[ERROR] Extracted content too short. Rejecting.');
     return null;
   }
 
+  console.log(`[SUCCESS] Valid content extracted: ${cleaned.substring(0, 100)}...`);
   return cleaned;
 }
 
@@ -241,11 +438,49 @@ function selectRandomTopic(topics) {
   return topics[Math.floor(Math.random() * topics.length)];
 }
 
+/**
+ * 加權選擇主題分類
+ * @param {Object} categories - 主題分類物件，每個分類有 weight 和 topics
+ * @returns {string} 選中的主題
+ */
+function selectWeightedTopic(categories) {
+  // 計算總權重
+  const entries = Object.entries(categories);
+  const totalWeight = entries.reduce((sum, [, cat]) => sum + cat.weight, 0);
+
+  // 隨機選擇
+  let random = Math.random() * totalWeight;
+  let selectedCategory = null;
+
+  for (const [name, category] of entries) {
+    random -= category.weight;
+    if (random <= 0) {
+      selectedCategory = { name, ...category };
+      break;
+    }
+  }
+
+  // Fallback
+  if (!selectedCategory) {
+    selectedCategory = { name: entries[0][0], ...entries[0][1] };
+  }
+
+  // 從選中的分類中隨機選擇主題
+  const topic = selectedCategory.topics[Math.floor(Math.random() * selectedCategory.topics.length)];
+
+  console.log(`[INFO] Selected category: ${selectedCategory.name} (weight: ${selectedCategory.weight}%)`);
+  return topic;
+}
+
 module.exports = {
   generateOriginalTweet,
   generateReply,
+  generateInterestReply,
+  generateTrackedReply,
   selectRandomTopic,
-  extractPersonaSummary
+  selectWeightedTopic,
+  extractPersonaSummary,
+  isInappropriateContent
 };
 
 // CLI 測試

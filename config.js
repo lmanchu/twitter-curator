@@ -319,6 +319,35 @@ module.exports = {
     max_total: 50       // Twitter 每日總限制
   },
 
+  // ========================================
+  // 🔄 Anti-Fatigue 策略 (基於 Twitter Algorithm 分析)
+  // ========================================
+  //
+  // Twitter 的 Heavy Ranker 會對過度活動給予 fatigue penalty
+  // 這些設定用於避免觸發這個機制
+  // See: TWITTER-ALGORITHM-INSIGHTS.md
+  //
+  ANTI_FATIGUE: {
+    // 同一帳號的回覆限制
+    per_account: {
+      max_replies_per_day: 2,      // 每日最多回覆同一人 2 次
+      min_gap_hours: 4,            // 回覆同一人需間隔 4 小時
+    },
+
+    // 多樣性要求 (SimClusters 友善)
+    diversity: {
+      min_unique_authors_ratio: 0.7,  // 70%+ 的回覆需對不同人
+      target_unique_authors: 15,       // 每日目標回覆 15+ 不同人
+    },
+
+    // 速率限制
+    rate_limits: {
+      max_replies_per_hour: 3,     // 每小時最多 3 則回覆
+      cooldown_after_burst: 30,    // 連續動作後冷卻 30 分鐘
+      burst_threshold: 5,          // 5 則以上視為 burst
+    }
+  },
+
   // 延遲設定（毫秒）
   DELAYS: {
     min: 3000,          // 最小 3 秒
@@ -350,13 +379,46 @@ module.exports = {
   TRACKED_ACCOUNTS: {
     enabled: true,
     // 追蹤帳號回覆比例（每 N 則回覆有 1 則是追蹤帳號）
-    ratio: 3,  // 33% 的回覆會針對追蹤帳號
+    ratio: 2,  // 50% 的回覆會針對追蹤帳號
     // 回覆風格
     reply_style: {
       tone: 'professional_insightful',  // 專業有見解
       approach: 'add_value',  // 增加價值
       avoid: ['sycophancy', 'self_promotion', 'generic_praise'],
       include: ['unique_perspective', 'relevant_experience', 'thoughtful_question']
+    }
+  },
+
+  // ========================================
+  // 💬 Engagement Hook 策略 (基於 Heavy Ranker 分析)
+  // ========================================
+  //
+  // Twitter 的神經網路預測用戶是否會互動
+  // 使用特定 pattern 可以提高回覆被看到的機率
+  //
+  ENGAGEMENT_HOOKS: {
+    // 優先使用的 hook 類型
+    preferred_patterns: [
+      'question',           // 提問引發回應
+      'hot_take',          // 有爭議性觀點引發討論
+      'personal_experience', // 分享經驗增加獨特價值
+      'build_on'           // 延伸對話
+    ],
+
+    // 避免的模式（Heavy Ranker 會給低分）
+    avoid_patterns: [
+      'generic_agreement',  // "Great point!" 無價值
+      'pure_praise',        // "Love this!" 太籠統
+      'self_promo_only',    // 純粹自我推銷
+      'one_word'            // 單字回覆
+    ],
+
+    // 每種 pattern 的權重（生成時使用）
+    weights: {
+      question: 30,
+      hot_take: 25,
+      personal_experience: 25,
+      build_on: 20
     }
   },
 

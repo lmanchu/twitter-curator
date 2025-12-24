@@ -127,18 +127,70 @@ function isInappropriateContent(text) {
 }
 
 /**
- * 使用 Ollama 生成推文回覆
+ * 選擇加權 engagement hook 模式
+ * @param {Object} weights - hook 模式權重 { question: 30, hot_take: 25, ... }
+ * @returns {string} 選中的模式名稱
  */
-async function generateReply(tweetText, tweetAuthor, persona, apiKey) {
+function selectEngagementHook(weights) {
+  const entries = Object.entries(weights);
+  const totalWeight = entries.reduce((sum, [, w]) => sum + w, 0);
+
+  let random = Math.random() * totalWeight;
+  for (const [pattern, weight] of entries) {
+    random -= weight;
+    if (random <= 0) {
+      return pattern;
+    }
+  }
+  return entries[0][0]; // fallback
+}
+
+/**
+ * 獲取 engagement hook 的 prompt 指導
+ */
+function getHookGuidance(hookPattern) {
+  const guidance = {
+    question: `End with a thought-provoking question that invites dialogue. Example: "Have you tried X?" or "What's been your experience with Y?"`,
+    hot_take: `Share a contrarian or bold perspective that challenges common assumptions. Spark discussion with a strong (but respectful) opinion.`,
+    personal_experience: `Share a brief, relevant anecdote from your startup journey at IrisGo or past experience. Make it personal and authentic.`,
+    build_on: `Extend their point with additional insight. Start with "Adding to this..." or "This also connects to..." to build on the conversation.`
+  };
+  return guidance[hookPattern] || guidance.question;
+}
+
+/**
+ * 使用 Ollama 生成推文回覆
+ * 整合 Heavy Ranker 優化的 Engagement Hook 策略
+ */
+async function generateReply(tweetText, tweetAuthor, persona, apiKey, engagementHooks = null) {
   // 先檢查原推文是否為不當內容
   if (isInappropriateContent(tweetText)) {
     console.log(`[SKIP] Skipping reply to inappropriate content from @${tweetAuthor}`);
     return null;
   }
 
+  // 選擇 engagement hook 模式
+  let hookPattern = 'question';
+  let hookGuidance = '';
+
+  if (engagementHooks && engagementHooks.weights) {
+    hookPattern = selectEngagementHook(engagementHooks.weights);
+    hookGuidance = getHookGuidance(hookPattern);
+    console.log(`[INFO] Using engagement hook: ${hookPattern}`);
+  }
+
+  // 避免的模式
+  const avoidPatterns = engagementHooks?.avoid_patterns || [];
+  const avoidGuidance = avoidPatterns.length > 0
+    ? `\nAvoid these low-value patterns:\n- ${avoidPatterns.map(p => p.replace(/_/g, ' ')).join('\n- ')}`
+    : '';
+
   const prompt = `You are Lman, a tech entrepreneur and AI expert. Write a reply to this tweet.
 
 Tweet from @${tweetAuthor}: "${tweetText}"
+
+Engagement Strategy (${hookPattern.replace(/_/g, ' ')}):
+${hookGuidance}
 
 Instructions:
 - Write a helpful, insightful reply
@@ -146,6 +198,8 @@ Instructions:
 - English only
 - Be conversational and add value
 - Technical but friendly
+- Make it invite further engagement (replies, likes)
+${avoidGuidance}
 
 Reply:`;
 
@@ -331,14 +385,49 @@ function cleanContent(content) {
     'You are Lman',
     'Reply to this tweet',
     'Write a reply',
+    'Write a tweet',
     'startup builder',
     'AI/tech expert',
     'tech entrepreneur',
+    'CoFounder of IrisGo',
+    // Interest Reply prompt 洩漏
+    'enthusiastic fan',
+    'passionate anime',
+    'passionate scifi',
+    'fan appreciation',
+    'Write as an',
+    'Express genuine appreciation',
+    'Be friendly and relatable',
+    'Share what you love',
+    'favorite scene',
+    'favorite moment',
+    'favorite character',
+    'connect it briefly to tech',
+    'focus on fan',
+    // 中文 prompt 洩漏
+    '熱情粉絲',
+    '粉絲的喜愛',
+    '最喜歡的場景',
+    '最喜歡的角色',
+    '必須使用英語',
+    '個字元',
+    '激動之情',
+    '我們需要',
+    '重點還是放在',
+    // Tracked Reply prompt 洩漏
+    'Get noticed by',
+    'strategic reply',
+    'influential person',
+    'thought-provoking question',
+    'contrarian insight',
+    'sycophantic',
     // 思考過程洩漏
     'We need to reply',
     'We need to respond',
+    'We need to write',
     'We should reply',
     'Let me analyze',
+    'Let me think',
     'This is explicit',
     'sexual content',
     'not allowed',
@@ -350,7 +439,10 @@ function cleanContent(content) {
     'Format your response',
     'Output ONLY',
     'Instructions:',
-    'Max 280'
+    'Max 280',
+    'characters max',
+    'English only',
+    'NO hashtags'
   ];
 
   // ✅ 優先：提取 "FINAL REPLY:" 或 "Reply:" 後的內容
@@ -479,6 +571,8 @@ module.exports = {
   generateTrackedReply,
   selectRandomTopic,
   selectWeightedTopic,
+  selectEngagementHook,
+  getHookGuidance,
   extractPersonaSummary,
   isInappropriateContent
 };

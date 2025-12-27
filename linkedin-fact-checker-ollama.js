@@ -6,6 +6,11 @@
  * 用途: 確保 LinkedIn 貼文基於真實事實，消除幻想內容
  * 架構: Draft → Fact-Check → Correct
  * API: Ollama (本地 LLM)
+ *
+ * v2.3 - 2025-12-14: 修復 prompt leak bug
+ *   - stripThinkingBlock 新增 "We should/must/can/have" 過濾
+ *   - 新增 meta-instruction 最終驗證，返回 null 如果檢測到殘留指令
+ *   - correctWithFacts 處理 null，返回 'rejected' 狀態
  */
 
 const fs = require('fs');
@@ -182,8 +187,9 @@ Generate the LinkedIn post directly, no additional explanation.`;
 }
 
 /**
- * 過濾掉 LLM 的思考過程區塊 (v2.2)
+ * 過濾掉 LLM 的思考過程區塊 (v2.3)
  * 完整版本，與 linkedin-content-generator.js 保持同步
+ * 2025-12-14 修復：新增 "We should/must/have" 等模式
  */
 function stripThinkingBlock(content) {
   let cleaned = content;
@@ -197,15 +203,59 @@ function stripThinkingBlock(content) {
   // 3. 移除 "[post]" 開頭的指令行 (整行)
   cleaned = cleaned.replace(/^\[post\].*$/gim, '');
 
-  // 4. 移除 "We need..." 開頭的指令行 (整行)
-  cleaned = cleaned.replace(/^We need\s+(to\s+)?(produce|write|ensure|create|make).*$/gim, '');
+  // 4. 移除 "We need..." 開頭的指令行 (整行) - 擴展更多動詞
+  cleaned = cleaned.replace(/^We need\s+(to\s+)?(produce|write|ensure|create|make|decide|avoid|mention|use|include|focus|consider|highlight|check).*$/gim, '');
+  // 4a. 🆕 移除 "We need a prediction/hook/opening..." 形式 (2025-12-14)
+  cleaned = cleaned.replace(/^We need\s+a\s+(prediction|hook|opening|closing|call|cta|question|statement|strong|bold|creative|compelling|engaging).*$/gim, '');
+
+  // 4b. 🆕 移除 "We should..." 開頭的指令行 (2025-12-14 新增)
+  cleaned = cleaned.replace(/^We should\s+(not\s+)?(produce|write|ensure|create|make|decide|avoid|mention|use|include|focus|consider|highlight|check|claim|keep).*$/gim, '');
+
+  // 4c. 🆕 移除 "We must..." 開頭的指令行 (2025-12-14 新增)
+  cleaned = cleaned.replace(/^We must\s+(not\s+)?(produce|write|ensure|create|make|decide|avoid|mention|use|include|focus|consider|highlight|check).*$/gim, '');
+
+  // 4d. 🆕 移除 "We can..." 開頭的指令行 (2025-12-14 新增)
+  cleaned = cleaned.replace(/^We can\s+(say|write|mention|use|include|add).*$/gim, '');
+
+  // 4e. 🆕 移除 "We have many facts..." 開頭的指令行 (2025-12-14 新增)
+  cleaned = cleaned.replace(/^We have\s+(many\s+)?(facts|verified|confirmed).*$/gim, '');
+
+  // 4f. 🆕 移除 "Include metrics..." 開頭的指令行 (2025-12-14 新增)
+  cleaned = cleaned.replace(/^Include\s+(metrics|numbers|statistics|data).*$/gim, '');
+
+  // 4g. 🆕 移除模板標記行 "Core insight:", "Real examples:", "Call-to-action:" (2025-12-14)
+  cleaned = cleaned.replace(/^(Core insight|Real examples?|Call-to-action|Opening hook|Main point|Key message|Closing|CTA):\s*["']?.*$/gim, '');
+
+  // 4h. 🆕 移除 "e.g.," / "e.g.:" 開頭的範例行 (2025-12-14)
+  cleaned = cleaned.replace(/^e\.g\.[,:]\s*["']?.*$/gim, '');
+
+  // 4i. 🆕 移除 "Count approximate/roughly" 開頭的計算行 (2025-12-14)
+  cleaned = cleaned.replace(/^Count\s+(approximate|roughly|about|the|characters|words).*$/gim, '');
+
+  // 4j. 🆕 移除 "We'll write/draft/create" 開頭的指令行 (2025-12-14)
+  cleaned = cleaned.replace(/^We'll\s+(write|draft|create|make|produce|use|include|add|start|begin).*$/gim, '');
+
+  // 4k. 🆕 移除 "We will" 開頭的指令行 (2025-12-14)
+  cleaned = cleaned.replace(/^We will\s+(write|draft|create|make|produce|use|include|add|start|begin|need).*$/gim, '');
 
   // 5. 移除 "Let's..." 開頭的思考行 (整行)
-  cleaned = cleaned.replace(/^Let's\s+(aim|count|draft|approximate|see|check|think|write|plan|structure|organize|ensure|make sure|keep|stay|target|shoot for|produce).*$/gim, '');
+  cleaned = cleaned.replace(/^Let's\s+(aim|count|draft|approximate|see|check|think|write|plan|structure|organize|ensure|make sure|keep|stay|target|shoot for|produce|craft|create).*$/gim, '');
+
+  // 5b. 移除 "Ok. Let's..." 形式
+  cleaned = cleaned.replace(/^Ok\.?\s*Let's.*$/gim, '');
+
+  // 5c. 移除 "Also mention..." 形式的思考行
+  cleaned = cleaned.replace(/^Also\s+(mention|include|add|note|avoid|use|focus|consider|highlight).*$/gim, '');
+
+  // 5d. 移除 "Should not mention..." 形式
+  cleaned = cleaned.replace(/^Should\s+(not\s+)?(mention|include|avoid|use|focus).*$/gim, '');
 
   // 6. 移除字數/段落計算行 (整行，包含數字範圍的)
   cleaned = cleaned.replace(/^.*\d+[-–]\d+\s*characters?.*$/gim, '');
   cleaned = cleaned.replace(/^.*~?\d+\s*characters?\.?\s*$/gim, '');
+  cleaned = cleaned.replace(/^Count\s+(characters|words|roughly).*$/gim, '');
+  cleaned = cleaned.replace(/^.*Rough\s+estimate.*$/gim, '');
+  cleaned = cleaned.replace(/^Draft:?\s*$/gim, '');
   cleaned = cleaned.replace(/^.*paragraph breaks?:.*$/gim, '');
   cleaned = cleaned.replace(/^.*\d+\s*paragraphs?.*$/gim, '');
   cleaned = cleaned.replace(/^.*need to keep within.*$/gim, '');
@@ -223,6 +273,13 @@ function stripThinkingBlock(content) {
   cleaned = cleaned.replace(/\s*\d+-\d+\s*hashtags?\.?\s*/gi, ' ');
   cleaned = cleaned.replace(/\s*CTA:\s*["']?Share your experiences!?["']?\s*/gi, '\n\nShare your experiences!');
 
+  // 9b. 🆕 移除行內 meta-instruction (2025-12-14 - 修復 prompt leak)
+  cleaned = cleaned.replace(/Check length:.*?(\.|\n)/gi, '');
+  cleaned = cleaned.replace(/Let's draft and count.*?(\.|\n)/gi, '');
+  cleaned = cleaned.replace(/We'll approximate\.?\s*/gi, '');
+  cleaned = cleaned.replace(/Count approximate:.*?(\.|\n)/gi, '');
+  cleaned = cleaned.replace(/We'll write and then.*?(\.|\n)/gi, '');
+
   // 10. 移除行尾的 meta 註解
   cleaned = cleaned.replace(/\s*That's\s+(hook|about|the\s+challenge|solution|result)\.?\s*$/gim, '');
 
@@ -237,6 +294,54 @@ function stripThinkingBlock(content) {
 
   // 14. 移除開頭結尾空白
   cleaned = cleaned.trim();
+
+  // 15. 🆕 最終驗證：如果還有 meta-instruction 就返回 null (2025-12-14 新增)
+  const metaKeywords = [
+    'We should produce',
+    'We must ensure',
+    'We need to',
+    'We need a',        // 🆕 catch "We need a prediction/hook"
+    'We have many facts',
+    'We can say',
+    'Include metrics',
+    'fabricated claims',
+    'verified facts',
+    'exaggerated',
+    'Use conservative',
+    'Use allowed',
+    'Format your response',
+    'Output ONLY',
+    'So we can write',
+    'Counterintuitive observation:',
+    'Avoid banned openings',
+    'Core insight:',    // 🆕 catch template markers
+    'Real examples:',   // 🆕
+    'Call-to-action:',  // 🆕
+    'e.g.,',            // 🆕 catch example markers
+    'e.g.:',            // 🆕
+    'Count approximate', // 🆕 catch calculation markers
+    "We'll write",      // 🆕
+    "We'll draft",      // 🆕
+    'We will write',    // 🆕
+    'We will draft',    // 🆕
+    'Check length:',    // 🆕
+    "Let's draft and count", // 🆕
+    "We'll approximate" // 🆕
+  ];
+
+  for (const keyword of metaKeywords) {
+    if (cleaned.includes(keyword)) {
+      console.log(`[ERROR] Meta-instruction still present after cleaning: "${keyword}"`);
+      console.log(`[DEBUG] Content preview: ${cleaned.substring(0, 200)}...`);
+      return null;
+    }
+  }
+
+  // 16. 🆕 長度驗證：太短的內容可能是殘留碎片
+  if (cleaned.length < 100) {
+    console.log(`[ERROR] Content too short after cleaning: ${cleaned.length} chars`);
+    return null;
+  }
 
   return cleaned;
 }
@@ -390,12 +495,40 @@ async function generateLinkedInPost(topic, context = null) {
       const startCorrect = Date.now();
       finalPost = await correctDraft(draft, factCheck);
       const correctTime = ((Date.now() - startCorrect) / 1000).toFixed(1);
+
+      // 🆕 2025-12-14: 檢查修正結果是否有效
+      if (!finalPost) {
+        console.log(`\n❌ 修正後內容無效（可能包含 meta-instruction），放棄發布`);
+        return {
+          status: 'rejected',
+          draft,
+          factCheck,
+          finalPost: null,
+          requiresReview: true,
+          rejectionReason: 'Content contained meta-instructions after correction'
+        };
+      }
+
       console.log(`\n✅ 修正完成 (${correctTime}s)\n`);
       console.log('─'.repeat(60));
       console.log(finalPost);
       console.log('─'.repeat(60));
     } else {
       console.log('✅ 草稿完全準確，無需修正\n');
+
+      // 🆕 2025-12-14: 即使草稿準確，也要驗證無 meta-instruction
+      finalPost = stripThinkingBlock(draft);
+      if (!finalPost) {
+        console.log(`\n❌ 草稿包含 meta-instruction，放棄發布`);
+        return {
+          status: 'rejected',
+          draft,
+          factCheck,
+          finalPost: null,
+          requiresReview: true,
+          rejectionReason: 'Draft contained meta-instructions'
+        };
+      }
     }
 
     return {

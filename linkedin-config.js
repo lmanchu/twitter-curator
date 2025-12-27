@@ -43,53 +43,110 @@ module.exports = {
   // 🎨 內容配置
   // ========================================
 
-  // LinkedIn 主題領域（面向消費者與知識工作者）
+  // ========================================
+  // 📚 LinkedIn 主題分類系統（加權選擇）
+  // ========================================
+  //
+  // 分類比例設計：
+  // - industry (40%): 產業觀察，不提公司
+  // - personal (25%): 個人洞察與成長
+  // - product (20%): 可提 IrisGo
+  // - technical (15%): 技術深度
+  //
+  TOPIC_CATEGORIES: {
+    // 產業觀察類 (40%) - 不提 IrisGo
+    industry: {
+      weight: 40,
+      topics: [
+        'AI industry trends and observations',
+        'The future of knowledge work',
+        'Enterprise AI adoption challenges',
+        'Consumer AI vs Enterprise AI',
+        'Why most AI products fail',
+        'Startup lessons from the trenches',
+        'Tech industry observations',
+        'The hype cycle in AI',
+        'Remote work productivity insights',
+        'What big tech gets wrong about AI'
+      ]
+    },
+
+    // 個人洞察類 (25%) - 不提 IrisGo
+    personal: {
+      weight: 25,
+      topics: [
+        'Lessons from startup failures',
+        'Founder mental health and burnout',
+        'Productivity systems that actually work',
+        'Continuous learning strategies',
+        'Reading recommendations for tech leaders',
+        'Work-life integration (not balance)',
+        'Decision-making frameworks',
+        'Historical parallels in technology',
+        'Philosophy of technology',
+        'Critical thinking in the AI age'
+      ]
+    },
+
+    // 產品相關類 (20%) - 可以提 IrisGo
+    product: {
+      weight: 20,
+      topics: [
+        'Building privacy-first AI products',
+        'On-premise AI for consumers',
+        'Personal AI assistants evolution',
+        'IrisGo.AI product journey',
+        'Privacy-first personal productivity',
+        'Local-first AI tools'
+      ]
+    },
+
+    // 技術深度類 (15%) - 專家視角
+    technical: {
+      weight: 15,
+      topics: [
+        'LLM deployment strategies',
+        'Edge AI vs cloud AI tradeoffs',
+        'Local-first software architecture',
+        'AI PC ecosystem analysis',
+        'On-device inference challenges',
+        'Privacy-preserving AI techniques'
+      ]
+    }
+  },
+
+  // 選擇主題的函數（在 linkedin-curator.js 中使用）
+  // 使用方法: selectWeightedTopic(config.TOPIC_CATEGORIES)
+  //
+  // 舊版 TOPICS 保留用於向後兼容
   TOPICS: [
-    // 個人 AI 助理與生產力
-    'Personal AI Assistants for Everyone',
-    'AI-Powered Personal Productivity',
-    'Managing Information Overload',
-    'Personal Knowledge Management',
-    'Workflow Automation for Individuals',
-    'AI Tools for Daily Life',
-    'Privacy-First Personal AI',
-    'On-Device AI for Consumers',
+    // 產業觀察 (40%)
+    'AI industry trends and observations',
+    'The future of knowledge work',
+    'Enterprise AI adoption challenges',
+    'Consumer AI vs Enterprise AI',
+    'Why most AI products fail',
+    'Startup lessons from the trenches',
+    'Tech industry observations',
+    'Remote work productivity insights',
 
-    // 知識工作者痛點
-    'Future of Knowledge Work',
-    'Remote Work Productivity',
-    'Managing Multiple Projects',
-    'Information Organization Tips',
-    'Fighting Digital Distraction',
-    'Work-Life Balance with AI',
-    'Personal Efficiency Hacks',
-    'Lifelong Learning Strategies',
+    // 個人洞察 (25%)
+    'Lessons from startup failures',
+    'Founder mental health and burnout',
+    'Productivity systems that actually work',
+    'Continuous learning strategies',
+    'Work-life integration',
+    'Decision-making frameworks',
 
-    // 消費者科技趨勢
-    'AI PC for Regular Users',
-    'Consumer AI Trends',
-    'Local-First Software',
-    'Privacy in Consumer Tech',
-    'Accessible AI Tools',
-    'User-Friendly AI',
-    'AI for Non-Technical People',
+    // 產品相關 (20%) - 可提 IrisGo
+    'Building privacy-first AI products',
+    'On-premise AI for consumers',
+    'Personal AI assistants evolution',
 
-    // 創業與產品洞察（from founder perspective）
-    'Building Products for Everyone',
-    'Consumer vs Enterprise Products',
-    'Lessons from Product Launches',
-    'Understanding User Needs',
-    'Founder Journey Insights',
-    'Product-Led Growth',
-
-    // 個人成長與思考
-    'Productivity Systems',
-    'Continuous Learning',
-    'Critical Thinking in AI Age',
-    'Philosophy of Technology',
-    'Systems Thinking',
-    'Historical Parallels in Tech',
-    'Innovation for Individuals'
+    // 技術深度 (15%)
+    'LLM deployment strategies',
+    'Edge AI vs cloud AI tradeoffs',
+    'Local-first software architecture'
   ],
 
   // 內容長度（LinkedIn 允許更長）
@@ -133,7 +190,7 @@ module.exports = {
     'ai for everyone'
   ],
 
-  // 回覆篩選條件
+  // 回覆篩選條件（放寬條件以增加回覆機會）
   REPLY_FILTERS: {
     // 優先回覆的作者類型
     priority_authors: [
@@ -142,19 +199,26 @@ module.exports = {
       'relevant_field'     // 相關領域專家
     ],
 
-    // 必須包含的關鍵詞（至少一個）
+    // 必須包含的關鍵詞（至少一個）- 擴大範圍
     include_keywords: [
-      'ai', 'artificial intelligence', 'personal assistant',
-      'productivity', 'knowledge work', 'remote work',
-      'work life balance', 'personal ai', 'privacy',
-      'ai tools', 'ai pc', 'consumer tech', 'workflow'
+      // AI 相關
+      'ai', 'artificial intelligence', 'machine learning', 'llm', 'gpt', 'claude',
+      'chatgpt', 'copilot', 'automation', 'agent',
+      // 生產力
+      'productivity', 'workflow', 'efficiency', 'time management',
+      // 創業/職場
+      'startup', 'founder', 'entrepreneur', 'product', 'tech', 'innovation',
+      'leadership', 'career', 'work', 'team',
+      // 寬泛主題
+      'future', 'trend', 'insight', 'lesson', 'learning', 'growth'
     ],
 
     // 排除的關鍵詞
     exclude_keywords: [
       'buy now', 'click here', 'dm me',
       'check out my course', 'limited time offer',
-      'crypto trading', 'get rich quick'
+      'crypto trading', 'get rich quick',
+      'hiring', 'job opening', 'we are hiring'  // 避免回覆招聘帖
     ],
 
     // 最小互動數
@@ -193,7 +257,28 @@ module.exports = {
     replied: '/Users/lman/twitter-curator/replied-linkedin.json',
     daily_stats: '/Users/lman/twitter-curator/daily-linkedin-stats.json',
     logs: '/Users/lman/twitter-curator/linkedin-curator.log',
-    errors: '/Users/lman/twitter-curator/linkedin-curator.error.log'
+    errors: '/Users/lman/twitter-curator/linkedin-curator.error.log',
+    tracked_accounts: '/Users/lman/Dropbox/PKM-Vault/0-Inbox/Tracked-Accounts.md'
+  },
+
+  // ========================================
+  // 🎯 追蹤帳號設定
+  // ========================================
+  //
+  // 從 tracked-accounts.md 讀取的帳號會被優先回覆
+  // 這些是你想讓他們注意到你的帳號（VCs、意見領袖等）
+  //
+  TRACKED_ACCOUNTS: {
+    enabled: true,
+    // 追蹤帳號回覆比例（每 N 則回覆有 1 則是追蹤帳號）
+    ratio: 2,  // 50% 的回覆會針對追蹤帳號
+    // 回覆風格
+    reply_style: {
+      tone: 'professional_insightful',  // 專業有見解
+      approach: 'add_value',  // 增加價值
+      avoid: ['sycophancy', 'self_promotion', 'generic_praise'],
+      include: ['unique_perspective', 'relevant_experience', 'thoughtful_question']
+    }
   },
 
   // ========================================
@@ -214,19 +299,44 @@ module.exports = {
     profile: 'https://www.linkedin.com/in/lmanchu/'
   },
 
-  // LinkedIn Selectors (may need updates as LinkedIn changes UI)
+  // LinkedIn Selectors (updated Dec 2025 - multiple fallbacks for UI changes)
   SELECTORS: {
     // 發文相關
-    startPostButton: '[aria-label*="Start a post"]',
+    startPostButton: [
+      '[aria-label*="Start a post"]',
+      'button.share-box-feed-entry__trigger',
+      '[data-test-icon="create-post"]'
+    ],
     postEditor: '.ql-editor',
     postButton: '[data-test-modal-id="share-box-post-button"]',
 
     // 搜尋與回覆相關
     searchBox: 'input.search-global-typeahead__input',
-    postCard: '.feed-shared-update-v2',
-    commentButton: '[aria-label*="Comment"]',
-    commentBox: '.ql-editor[contenteditable="true"]',
-    commentSubmitButton: 'button.comments-comment-box__submit-button',
+    postCard: [
+      '.feed-shared-update-v2',
+      '[data-urn*="activity"]',
+      '.update-components-actor'
+    ],
+    commentButton: [
+      'button[aria-label*="Comment"]',
+      'button[aria-label*="comment"]',
+      '[data-test-icon="comment-medium"]',
+      'button.comment-button',
+      'span.social-actions-button'
+    ],
+    commentBox: [
+      '.ql-editor[contenteditable="true"]',
+      '[data-placeholder*="Add a comment"]',
+      '.comments-comment-box__form-container [contenteditable="true"]',
+      '.comments-comment-texteditor [contenteditable="true"]',
+      'div[role="textbox"][contenteditable="true"]'
+    ],
+    commentSubmitButton: [
+      'button.comments-comment-box__submit-button',
+      'button[data-test-icon="send-privately-small"]',
+      'button.artdeco-button--primary[type="submit"]',
+      'form.comments-comment-box__form button[type="submit"]'
+    ],
 
     // 通用
     loadingSpinner: '.artdeco-loader'

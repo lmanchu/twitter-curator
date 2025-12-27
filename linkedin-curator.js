@@ -21,7 +21,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
 const config = require('./linkedin-config');
-const { generateLinkedInPost, generateLinkedInReply, selectRandomTopic } = require('./linkedin-content-generator');
+const { generateLinkedInPost, generateLinkedInReply, selectRandomTopic, selectWeightedTopic } = require('./linkedin-content-generator');
 
 // 載入事實核查系統 (Ollama 版本)
 let factChecker;
@@ -33,6 +33,97 @@ try {
 }
 
 puppeteer.use(StealthPlugin());
+
+// ========================================
+// 🎯 Tracked Accounts 解析
+// ========================================
+
+function parseTrackedAccounts() {
+  try {
+    const filePath = config.PATHS.tracked_accounts;
+    if (!fs.existsSync(filePath)) {
+      console.log('[INFO] No tracked-accounts.md found');
+      return { twitter: [], linkedin: [] };
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n');
+
+    const twitter = [];
+    const linkedin = [];
+    let currentSection = null;
+    let currentCategory = null;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // 跳過空行
+      if (!trimmed) continue;
+
+      // 先檢測 section headers (## 開頭)
+      if (trimmed.startsWith('## ')) {
+        if (trimmed === '## Twitter Accounts') {
+          currentSection = 'twitter';
+        } else if (trimmed === '## LinkedIn Accounts') {
+          currentSection = 'linkedin';
+        } else if (trimmed === '## Notes') {
+          currentSection = null;  // 停止解析
+        } else {
+          // 其他 ## 標題，保持當前 section
+        }
+        continue;
+      }
+
+      // 檢測 category (### 開頭)
+      if (trimmed.startsWith('### ')) {
+        currentCategory = trimmed.replace('### ', '').toLowerCase();
+        continue;
+      }
+
+      // 跳過註解 (# 開頭但不是 ##/###)
+      if (trimmed.startsWith('#')) continue;
+
+      // 跳過其他 markdown 語法
+      if (trimmed.startsWith('---') || trimmed.startsWith('- ')) continue;
+
+      // 解析帳號
+      if (currentSection === 'twitter') {
+        const username = trimmed.replace(/^@/, '').trim();
+        if (username && !username.includes(' ')) {
+          twitter.push({
+            username,
+            category: currentCategory || 'general',
+            priority: getPriority(currentCategory)
+          });
+        }
+      } else if (currentSection === 'linkedin') {
+        const username = trimmed.trim();
+        if (username && !username.includes(' ')) {
+          linkedin.push({
+            username,
+            category: currentCategory || 'general',
+            priority: getPriority(currentCategory)
+          });
+        }
+      }
+    }
+
+    console.log(`[INFO] Parsed tracked accounts: ${twitter.length} Twitter, ${linkedin.length} LinkedIn`);
+    return { twitter, linkedin };
+
+  } catch (error) {
+    console.error('[ERROR] Failed to parse tracked accounts:', error.message);
+    return { twitter: [], linkedin: [] };
+  }
+}
+
+function getPriority(category) {
+  if (!category) return 3;
+  if (category.includes('vc') || category.includes('investor')) return 1;
+  if (category.includes('leader') || category.includes('ai')) return 2;
+  if (category.includes('founder')) return 3;
+  return 4;
+}
 
 // ========================================
 // 日誌系統
@@ -79,7 +170,8 @@ function saveJSON(filepath, data) {
 
 function getDailyStats() {
   const stats = loadJSON(config.PATHS.daily_stats, {});
-  const today = new Date().toISOString().split('T')[0];
+  // 使用台灣時區 (UTC+8) 計算日期
+  const today = new Date(Date.now() + (8 * 60 * 60 * 1000)).toISOString().split('T')[0];
 
   if (!stats[today]) {
     stats[today] = { posts: 0, replies: 0, total: 0 };
@@ -277,6 +369,109 @@ async function postLinkedInPost(page, postText) {
 }
 
 // ========================================
+// 搜尋 Tracked Accounts 的貼文
+// ========================================
+
+async function searchTrackedAccountPosts(page, trackedAccounts) {
+  try {
+    log('🎯 Searching posts from tracked LinkedIn accounts...');
+
+    // 按優先級排序
+    const sortedAccounts = trackedAccounts.sort((a, b) => a.priority - b.priority);
+
+    // 隨機選擇一個帳號（優先級高的機率較大）
+    const account = sortedAccounts[Math.floor(Math.random() * Math.min(3, sortedAccounts.length))];
+
+    log(`Searching for posts from: ${account.username} (${account.category}, priority ${account.priority})`);
+
+    // 搜尋該帳號的貼文
+    const searchUrl = `https://www.linkedin.com/search/results/content/?fromMember=%5B%22${account.username}%22%5D&sortBy=%22date_posted%22`;
+
+    await page.goto(searchUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+
+    await randomDelay(5000, 7000);
+
+    // 滾動載入內容
+    await page.evaluate(() => window.scrollBy(0, 800));
+    await randomDelay(2000, 3000);
+
+    // 等待貼文載入
+    try {
+      await page.waitForSelector('[class*="feed-shared-update-v2"]', { timeout: 20000 });
+    } catch (e) {
+      log('No posts found from tracked account, falling back...', 'WARN');
+      return null;
+    }
+
+    // 提取貼文（使用與 searchRelevantPosts 相同的邏輯）
+    const posts = await page.evaluate(() => {
+      const postElements = Array.from(document.querySelectorAll('[class*="feed-shared-update-v2"]'));
+
+      return postElements.slice(0, 10).map((post, index) => {
+        try {
+          let author = 'Unknown';
+          const authorSelectors = [
+            '[class*="update-components-actor__name"]',
+            '[class*="entity-result__title"]',
+            '[data-test-link-to-profile-link]',
+            'span.update-components-actor__name span[aria-hidden="true"]'
+          ];
+
+          for (const selector of authorSelectors) {
+            const authorElement = post.querySelector(selector);
+            if (authorElement && authorElement.textContent.trim()) {
+              author = authorElement.textContent.trim();
+              break;
+            }
+          }
+
+          let text = '';
+          const textSelectors = [
+            '[class*="feed-shared-text__text-view"]',
+            '[class*="update-components-text"]',
+            '[data-test-update-text]'
+          ];
+
+          for (const selector of textSelectors) {
+            const textElement = post.querySelector(selector);
+            if (textElement && textElement.textContent.trim()) {
+              text = textElement.textContent.trim();
+              break;
+            }
+          }
+
+          const commentButton = post.querySelector('button[aria-label*="Comment"]');
+
+          return {
+            index,
+            author,
+            text: text.substring(0, 500),
+            hasCommentButton: !!commentButton,
+            element: post
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(p => p && p.text.length > 50 && p.hasCommentButton);
+    });
+
+    if (posts.length > 0) {
+      log(`✅ Found ${posts.length} posts from tracked account: ${account.username}`);
+      return { posts, accountInfo: account };
+    }
+
+    return null;
+
+  } catch (error) {
+    log(`Error searching tracked account posts: ${error.message}`, 'ERROR');
+    return null;
+  }
+}
+
+// ========================================
 // 搜尋相關貼文
 // ========================================
 
@@ -284,20 +479,51 @@ async function searchRelevantPosts(page) {
   try {
     log('Searching for relevant LinkedIn posts...');
 
-    const keywords = config.SEARCH_KEYWORDS;
-    const searchTerm = keywords[Math.floor(Math.random() * keywords.length)];
+    // 🆕 策略優先級：
+    // 1. 33% 機率搜尋 tracked accounts（如果有開啟）
+    // 2. 70% 使用主頁 feed
+    // 3. 30% 使用關鍵字搜尋
 
-    log(`Searching for: "${searchTerm}"`);
+    const trackedConfig = config.TRACKED_ACCOUNTS;
+    const useTrackedAccounts = trackedConfig && trackedConfig.enabled && Math.random() < (1 / (trackedConfig.ratio || 3));
 
-    const searchUrl = `${config.LINKEDIN_URLS.search}?keywords=${encodeURIComponent(searchTerm)}`;
-    await page.goto(searchUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    });
+    if (useTrackedAccounts) {
+      const { linkedin: trackedAccounts } = parseTrackedAccounts();
+      if (trackedAccounts.length > 0) {
+        const result = await searchTrackedAccountPosts(page, trackedAccounts);
+        if (result) {
+          return result.posts;
+        }
+        log('Tracked account search failed, falling back to regular search', 'WARN');
+      }
+    }
+
+    const useHomeFeed = Math.random() < 0.7; // 70% 使用主頁 feed
+
+    if (useHomeFeed) {
+      log('Using home feed (posts from your network)...');
+      await page.goto(config.LINKEDIN_URLS.home, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+    } else {
+      const keywords = config.SEARCH_KEYWORDS;
+      const searchTerm = keywords[Math.floor(Math.random() * keywords.length)];
+      log(`Searching for: "${searchTerm}"`);
+      const searchUrl = `${config.LINKEDIN_URLS.search}?keywords=${encodeURIComponent(searchTerm)}`;
+      await page.goto(searchUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+    }
 
     // 給頁面更多時間加載內容
     log('Waiting for search results to load...');
     await randomDelay(5000, 7000);
+
+    // 滾動一下以載入更多內容
+    await page.evaluate(() => window.scrollBy(0, 800));
+    await randomDelay(2000, 3000);
 
     // 使用更長的 timeout 等待貼文元素
     try {
@@ -383,7 +609,8 @@ async function searchRelevantPosts(page) {
             postId,
             author,
             text: text.substring(0, 500),
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            elementIndex: index  // 用於在當前頁面直接回覆
           };
         } catch (e) {
           console.error(`[DEBUG] Error processing post ${index}:`, e.message);
@@ -439,7 +666,256 @@ function filterPostsForReply(posts) {
 }
 
 // ========================================
-// 發送回覆（改進版 - 多個備用選擇器）
+// 在當前頁面直接回覆（不導航離開）
+// ========================================
+
+async function replyOnCurrentPage(page, elementIndex, replyText) {
+  try {
+    // 找到對應的貼文元素
+    const postElements = await page.$$('[class*="feed-shared-update-v2"]');
+
+    if (elementIndex >= postElements.length) {
+      log(`Element index ${elementIndex} out of range (${postElements.length} elements)`, 'WARN');
+      return false;
+    }
+
+    const postElement = postElements[elementIndex];
+
+    // 滾動到貼文位置
+    await postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await randomDelay(1500, 2500);
+
+    // LinkedIn 的 Comment 按鈕在 post 元素外部的 social actions 區域
+    // 方法：找到所有 "Comment" 按鈕，選擇視覺上最接近這個 post 的那個
+    const commentBtn = await page.evaluateHandle((postEl, idx) => {
+      // 取得 post 元素的位置
+      const postRect = postEl.getBoundingClientRect();
+      const postCenterY = postRect.top + postRect.height / 2;
+
+      // 找所有 aria-label 含 "Comment" 的按鈕
+      const allCommentBtns = Array.from(document.querySelectorAll('button[aria-label="Comment"]'));
+
+      if (allCommentBtns.length === 0) return null;
+
+      // 對於搜尋結果頁面，Comment 按鈕的順序通常與 post 順序一致
+      // 直接用 index 選擇對應的 Comment 按鈕
+      if (allCommentBtns.length > idx) {
+        return allCommentBtns[idx];
+      }
+
+      // Fallback: 選擇距離 post 元素最近的 Comment 按鈕
+      let closestBtn = null;
+      let minDistance = Infinity;
+
+      for (const btn of allCommentBtns) {
+        const btnRect = btn.getBoundingClientRect();
+        const btnCenterY = btnRect.top + btnRect.height / 2;
+        const distance = Math.abs(btnCenterY - postCenterY);
+
+        // 確保按鈕在 post 附近（垂直距離不超過 post 高度的 1.5 倍）
+        if (distance < minDistance && distance < postRect.height * 1.5) {
+          minDistance = distance;
+          closestBtn = btn;
+        }
+      }
+
+      return closestBtn;
+    }, postElement, elementIndex);
+
+    const isValid = await commentBtn.evaluate(el => el !== null);
+    if (!commentBtn || !isValid) {
+      log('Comment button not found for this post', 'WARN');
+      return false;
+    }
+
+    log(`✓ Found comment button for post ${elementIndex}`);
+
+    await commentBtn.click();
+    log('✓ Comment button clicked on current page');
+
+    // 滾動確保 comment 區域可見
+    await postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await randomDelay(2000, 3000);
+
+    // 檢查是否有「僅限連結才能留言」的限制
+    const connectionOnlyMessage = await page.$('text/Only connections can comment');
+    if (connectionOnlyMessage) {
+      log('⚠️ Post restricted to connections only, skipping...', 'WARN');
+      return false;
+    }
+
+    // 找留言框 - 使用多個選擇器和等待
+    let commentBox = null;
+    const commentBoxSelectors = [
+      // LinkedIn 2024-2025 常見選擇器
+      '.ql-editor[contenteditable="true"]',
+      'div[role="textbox"][contenteditable="true"]',
+      '[data-placeholder*="Add a comment"]',
+      '.comments-comment-box__form-container [contenteditable="true"]',
+      '.comments-comment-texteditor [contenteditable="true"]',
+      '.editor-content[contenteditable="true"]',
+      'div.ql-editor[data-placeholder]',
+      // 新增：更多 LinkedIn 變體
+      '.comments-comment-box [contenteditable="true"]',
+      '[class*="comment"] [contenteditable="true"]',
+      '[aria-label*="comment" i] [contenteditable="true"]',
+      'form[class*="comment"] [contenteditable="true"]'
+    ];
+
+    // 先等待一段時間讓 UI 完全載入
+    log('Waiting for comment box to appear...');
+    await randomDelay(1500, 2000);
+
+    // 嘗試等待留言框出現
+    for (const selector of commentBoxSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 3000, visible: true });
+        commentBox = await page.$(selector);
+        if (commentBox) {
+          log(`✓ Comment box found with selector: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // 繼續嘗試下一個選擇器
+      }
+    }
+
+    // 如果還找不到，嘗試用 evaluate 找任何可編輯區域
+    if (!commentBox) {
+      log('Trying to find comment box via evaluate...');
+      const handle = await page.evaluateHandle(() => {
+        // 找所有 contenteditable 元素
+        const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
+        // 過濾掉隱藏的和 post 編輯器（只要 comment 相關的）
+        const visible = editables.filter(el => {
+          const rect = el.getBoundingClientRect();
+          const style = window.getComputedStyle(el);
+          return rect.width > 0 && rect.height > 0 &&
+                 style.display !== 'none' && style.visibility !== 'hidden';
+        });
+        // 返回最下面的那個（通常是最近打開的 comment box）
+        if (visible.length > 0) {
+          return visible[visible.length - 1];
+        }
+        return null;
+      });
+
+      const isValid = await handle.evaluate(el => el !== null);
+      if (handle && isValid) {
+        commentBox = handle;
+        log('✓ Comment box found via evaluate (last visible contenteditable)');
+      }
+    }
+
+    if (!commentBox) {
+      // 截圖以便調試
+      const screenshotPath = `/Users/lman/twitter-curator/debug-no-commentbox-${Date.now()}.png`;
+      await page.screenshot({ path: screenshotPath });
+      log(`Screenshot saved: ${screenshotPath}`, 'DEBUG');
+      log('Comment box not found after clicking', 'WARN');
+      return false;
+    }
+
+    // 輸入留言
+    await commentBox.click();
+    await randomDelay(500, 1000);
+    await page.keyboard.type(replyText, { delay: 30 });
+    log(`✓ Reply typed (${replyText.length} characters)`);
+    await randomDelay(1000, 2000);
+
+    // 找提交按鈕 - 使用多個選擇器和策略
+    log('Looking for Post/Submit button...');
+    let submitBtn = null;
+
+    const submitButtonSelectors = [
+      'button.comments-comment-box__submit-button',
+      'button.comments-comment-box__submit-button--cr',
+      'form.comments-comment-box__form button[type="submit"]',
+      'button.artdeco-button--primary[type="submit"]',
+      'button[aria-label*="Post"]',
+      'button[class*="comment"][class*="submit"]',
+      '.comments-comment-box button.artdeco-button--primary',
+      'button.comments-comment-box-comment__submit-button'
+    ];
+
+    // 等待一下讓按鈕出現（在輸入文字後）
+    await randomDelay(500, 1000);
+
+    // 嘗試每個選擇器
+    for (const selector of submitButtonSelectors) {
+      try {
+        submitBtn = await page.$(selector);
+        if (submitBtn) {
+          // 確認按鈕是可見且可點擊的
+          const isVisible = await submitBtn.evaluate(el => {
+            const rect = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 &&
+                   style.display !== 'none' && style.visibility !== 'hidden';
+          });
+
+          if (isVisible) {
+            log(`✓ Submit button found with selector: ${selector}`);
+            break;
+          }
+          submitBtn = null;
+        }
+      } catch (e) {
+        // 繼續嘗試下一個
+      }
+    }
+
+    // 如果還找不到，用 evaluate 尋找包含 "Post" 文字的按鈕
+    if (!submitBtn) {
+      log('Trying to find Post button by text...');
+      const buttonHandle = await page.evaluateHandle(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        // 找最近的留言區域內的 Post 按鈕
+        const commentArea = document.querySelector('.comments-comment-box, form.comments-comment-box__form');
+        if (commentArea) {
+          const btnsInCommentArea = Array.from(commentArea.querySelectorAll('button'));
+          return btnsInCommentArea.find(btn =>
+            btn.textContent.trim().toLowerCase() === 'post' ||
+            btn.getAttribute('aria-label')?.toLowerCase().includes('post')
+          );
+        }
+        // Fallback: 全域搜尋
+        return buttons.find(btn =>
+          (btn.textContent.trim().toLowerCase() === 'post' ||
+           btn.getAttribute('aria-label')?.toLowerCase().includes('post')) &&
+          btn.getBoundingClientRect().width > 0
+        );
+      });
+
+      const isValid = await buttonHandle.evaluate(el => el !== null);
+      if (buttonHandle && isValid) {
+        submitBtn = buttonHandle;
+        log('✓ Post button found via text search');
+      }
+    }
+
+    if (submitBtn) {
+      await submitBtn.click();
+      log('✓ Reply submitted via Post button');
+      await randomDelay(4000, 6000);
+      return true;
+    } else {
+      log('❌ Post button not found, cannot submit reply', 'ERROR');
+      // 截圖以便調試
+      const screenshotPath = `/Users/lman/twitter-curator/debug-no-postbutton-${Date.now()}.png`;
+      await page.screenshot({ path: screenshotPath });
+      log(`Screenshot saved: ${screenshotPath}`, 'DEBUG');
+      return false;
+    }
+
+  } catch (error) {
+    log(`Error replying on current page: ${error.message}`, 'ERROR');
+    return false;
+  }
+}
+
+// ========================================
+// 發送回覆（改進版 - 直接在 Feed 頁面回覆）
 // ========================================
 
 async function replyToPost(page, post, replyText) {
@@ -451,12 +927,50 @@ async function replyToPost(page, post, replyText) {
 
     log(`Replying to ${post.author}...`);
 
-    const postUrl = `https://www.linkedin.com/feed/update/${post.postId}`;
-    await page.goto(postUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    });
-    await randomDelay(3000, 5000);
+    // 策略 1: 嘗試在當前頁面找到該貼文並回覆（避免導航問題）
+    if (post.elementIndex !== undefined) {
+      log(`Trying to reply on current page (element index: ${post.elementIndex})...`);
+      const replySuccess = await replyOnCurrentPage(page, post.elementIndex, replyText);
+      if (replySuccess) {
+        // 記錄已回覆（與導航方式相同的記錄邏輯）
+        const replied = loadJSON(config.PATHS.replied);
+        replied.push({
+          postId: post.postId,
+          postText: post.text.substring(0, 100),
+          postAuthor: post.author,
+          reply: replyText,
+          timestamp: new Date().toISOString(),
+          method: 'in-page-reply'
+        });
+        saveJSON(config.PATHS.replied, replied);
+        incrementReplyCount();
+        log(`✅ Reply recorded for ${post.author}`);
+        return true;
+      }
+      log('Failed to reply on current page, trying navigation method...', 'WARN');
+    }
+
+    // 策略 2: 導航到貼文頁面（備用方案）
+    // 只在 postId 不是臨時 ID 時嘗試
+    if (post.postId && !post.postId.startsWith('temp-')) {
+      const postUrl = `https://www.linkedin.com/feed/update/${post.postId}`;
+      log(`Navigating to: ${postUrl}`);
+      await page.goto(postUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+      await randomDelay(3000, 5000);
+
+      // 檢查頁面是否正常加載
+      const hasError = await page.$('text=Something went wrong');
+      if (hasError) {
+        log('Post page failed to load, skipping...', 'WARN');
+        return false;
+      }
+    } else {
+      log(`Invalid postId: ${post.postId}, cannot navigate`, 'WARN');
+      return false;
+    }
 
     // === 步驟 1: 點擊 Comment 按鈕（使用多個策略）===
     log('Looking for Comment button...');
@@ -739,7 +1253,10 @@ async function main() {
       if (canPost()) {
         log('\n--- Generating LinkedIn post ---');
 
-        const topic = selectRandomTopic(config.TOPICS);
+        // 使用加權主題選擇（如果有 TOPIC_CATEGORIES）
+        const topic = config.TOPIC_CATEGORIES
+          ? selectWeightedTopic(config.TOPIC_CATEGORIES)
+          : selectRandomTopic(config.TOPICS);
         log(`Selected topic: ${topic}`);
 
         let postText;
@@ -750,10 +1267,18 @@ async function main() {
           try {
             const context = { platform: 'LinkedIn', tone: 'Professional' };
             const result = await factChecker.generateLinkedInPost(topic, context);
-            postText = result.finalPost;
-            log(`✅ Fact-check score: ${result.factCheck.score}/100`);
-            if (result.requiresReview) {
-              log('⚠️  Content requires review, but proceeding...', 'WARN');
+
+            // 🆕 2025-12-14: 處理 rejected 狀態
+            if (result.status === 'rejected') {
+              log(`❌ Content rejected: ${result.rejectionReason}`, 'ERROR');
+              log('🔄 Skipping this post to prevent meta-instruction leak');
+              postText = null;
+            } else {
+              postText = result.finalPost;
+              log(`✅ Fact-check score: ${result.factCheck.score}/100`);
+              if (result.requiresReview) {
+                log('⚠️  Content requires review, but proceeding...', 'WARN');
+              }
             }
           } catch (error) {
             log(`Fact-checker error, falling back to original: ${error.message}`, 'WARN');
@@ -766,6 +1291,8 @@ async function main() {
         if (postText) {
           await postLinkedInPost(page, postText);
           await randomDelay(config.DELAYS.after_post);
+        } else {
+          log('⚠️  No valid post content generated, skipping', 'WARN');
         }
       } else {
         log('Skipping post - daily limit reached');
@@ -784,16 +1311,31 @@ async function main() {
         const worthReplyingTo = filterPostsForReply(posts);
 
         if (worthReplyingTo.length > 0) {
-          const post = worthReplyingTo[0];
+          let replySent = false;
+          const maxAttempts = Math.min(worthReplyingTo.length, 5); // 最多嘗試 5 篇
 
-          log(`\n--- Processing post from ${post.author} ---`);
-          log(`Post: ${post.text.substring(0, 100)}...`);
+          for (let i = 0; i < maxAttempts && !replySent; i++) {
+            const post = worthReplyingTo[i];
 
-          const replyText = await generateLinkedInReply(post.text, post.author, persona);
+            log(`\n--- Processing post ${i + 1}/${maxAttempts} from ${post.author} ---`);
+            log(`Post: ${post.text.substring(0, 100)}...`);
 
-          if (replyText) {
-            await replyToPost(page, post, replyText);
-            await randomDelay(config.DELAYS.after_reply);
+            const replyText = await generateLinkedInReply(post.text, post.author, persona);
+
+            if (replyText) {
+              const success = await replyToPost(page, post, replyText);
+              if (success) {
+                replySent = true;
+                await randomDelay(config.DELAYS.after_reply);
+              } else {
+                log(`Failed to reply to post ${i + 1}, trying next...`, 'WARN');
+                await randomDelay(2000, 3000); // 短暫等待後嘗試下一篇
+              }
+            }
+          }
+
+          if (!replySent) {
+            log('❌ Failed to reply to any posts after multiple attempts', 'ERROR');
           }
         } else {
           log('No suitable posts found to reply to');

@@ -620,5 +620,11 @@
     "timestamp": "2025-12-27T10:21:27.038Z",
     "platform": "linkedin",
     "method": "puppeteer"
+  },
+  {
+    "text": "90% of AI products I've seen fail for the same reason: they solve technical problems, not human ones...",
+    "timestamp": "2025-12-27T15:17:14.758Z",
+    "platform": "linkedin",
+    "method": "claude-in-chrome"
   }
 ]

@@ -3,6 +3,11 @@
 /**
  * Content Generator for LinkedIn Curator
  * 使用 Ollama 本地模型生成符合 Persona 的 LinkedIn 貼文和回覆
+ *
+ * v2.5 - 2025-12-14: 修復 prompt leak bug
+ *   - 新增 "We should/must/can/have" 等 meta-instruction 過濾
+ *   - stripThinkingBlock 現在返回 null 如果檢測到殘留指令
+ *   - validateAndFinalizePost 處理 null 返回值
  */
 
 require('dotenv').config();
@@ -141,17 +146,30 @@ async function generateLinkedInPost(persona, topic) {
   const identity = selectIdentity(topic);
   const topicType = categorizeTopicType(topic);
 
-  const styles = [
-    'Share a professional insight with concrete examples',
-    'Tell a story about a recent challenge and solution',
-    'Share lessons learned from a project or experience',
-    'Discuss industry trends with your unique perspective',
-    'Ask a thought-provoking question to spark discussion',
-    'Share practical advice for professionals in your field',
-    'Provide analysis of current tech developments',
-    'Share a contrarian view with supporting reasoning'
+  // ✨ Hook 多樣化系統 - 20 種具體開頭範例
+  const hookExamples = [
+    'Start with a surprising statistic or data point',
+    'Open with a brief personal failure story',
+    'Challenge a common industry assumption',
+    'Share a recent "aha moment" from your work',
+    'Describe a problem your audience faces daily',
+    'Use a brief case study from your experience',
+    'Start with what most people get wrong about [topic]',
+    'Open with a counterintuitive observation',
+    'Share the worst advice you ever received',
+    'Describe what changed your perspective recently',
+    'Start with a common mistake you see professionals make',
+    'Open with a specific example from this week',
+    'Challenge conventional wisdom with evidence',
+    'Share an unexpected lesson from a project',
+    'Describe a trend everyone else is missing',
+    'Start with what nobody talks about in [industry]',
+    'Open with a comparison that makes people think',
+    'Share something that surprised you about [topic]',
+    'Start with a prediction and your reasoning',
+    'Describe a paradox you noticed in your field'
   ];
-  const randomStyle = styles[Math.floor(Math.random() * styles.length)];
+  const randomStyle = hookExamples[Math.floor(Math.random() * hookExamples.length)];
 
   // 根據主題類型決定是否可以提 IrisGo
   const companyMentionRule = topicType === 'product'
@@ -161,16 +179,25 @@ async function generateLinkedInPost(persona, topic) {
   const prompt = `Write a professional LinkedIn post as ${identity}.
 
 Topic: ${topic}
-Style: ${randomStyle}
+Opening Style: ${randomStyle}
 
-Step 1: Think about the best approach (internal analysis only)
-Step 2: Write your final LinkedIn post
+⚠️ CRITICAL RULES:
+1. Do NOT use these overused openings:
+   - "Ever wonder..."
+   - "Have you ever wondered..."
+   - "Did you know..."
+   - "What if I told you..."
+   - "Imagine this..."
+2. Do NOT include ANY meta-commentary like:
+   - "Let's draft...", "Count roughly...", "That's hook..."
+   - "[post]", "Paragraph 1:", "Hook:", etc.
+3. Output ONLY the final post text - no planning notes
 
 Requirements for final post:
 - Length: 600-1000 characters
 - English only
 - Professional yet conversational
-- Include a hook in the first line
+- Strong, specific opening (follow the style above)
 - Share personal insights or expertise
 - End with a question or call-to-action
 - Use paragraph breaks for readability
@@ -265,12 +292,14 @@ Include this insight naturally in your reply: "${animeAnalogy}"
 
 Requirements:
 - Write 2-3 sentences (150-250 characters)
+- ENGLISH ONLY - never use Chinese or other languages
 - Add genuine value or insight
 - Be conversational and professional
 - Do NOT mention any company name
 - No hashtags
+- Do NOT copy or repeat the original post content
 
-Output ONLY your comment text, nothing else.`;
+Output ONLY your comment text in English, nothing else.`;
   } else {
     // 標準版本
     prompt = `You are ${identity}. Write a professional LinkedIn comment reply.
@@ -279,17 +308,25 @@ Post from @${postAuthor}: "${postText}"
 
 Requirements:
 - Write 2-3 sentences (100-200 characters)
+- ENGLISH ONLY - never use Chinese or other languages
 - Add value: agree/disagree with insight, share experience, or ask thoughtful question
 - Be conversational and authentic
 - Do NOT mention any company name
 - No hashtags
+- Do NOT copy or repeat the original post content
 
-Output ONLY your comment text, nothing else.`;
+Output ONLY your comment text in English, nothing else.`;
   }
 
   try {
     const response = await callOllamaAPI(prompt);
     const cleanedReply = cleanReplyContent(response);
+
+    // ✅ 驗證：檢查是否複製原文（重疊超過 50%）
+    if (cleanedReply && isContentDuplicate(cleanedReply, postText)) {
+      console.log('[ERROR] Reply duplicates original post content. Rejecting.');
+      return null;
+    }
 
     // 如果使用了動漫類比，記錄日誌
     if (animeAnalogy && cleanedReply) {
@@ -301,6 +338,31 @@ Output ONLY your comment text, nothing else.`;
     console.error('Error generating LinkedIn reply:', error.message);
     return null;
   }
+}
+
+/**
+ * 檢查回覆內容是否重複原文
+ * 使用相似度計算，如果重疊超過 50% 則視為重複
+ */
+function isContentDuplicate(reply, originalPost) {
+  // 正規化文字（移除標點、轉小寫、分詞）
+  const normalize = (text) => {
+    return text.toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter(word => word.length > 3); // 只比較長度 > 3 的單字
+  };
+
+  const replyWords = new Set(normalize(reply));
+  const postWords = new Set(normalize(originalPost));
+
+  // 計算交集
+  const intersection = [...replyWords].filter(word => postWords.has(word));
+  const similarity = intersection.length / Math.min(replyWords.size, postWords.size);
+
+  console.log(`[DEBUG] Content similarity: ${(similarity * 100).toFixed(1)}%`);
+
+  return similarity > 0.5; // 超過 50% 相似度視為重複
 }
 
 /**
@@ -405,6 +467,12 @@ function validateAndFinalizePost(content, topic, metaKeywords) {
   // ✅ Step 0: 先用 stripThinkingBlock 清理思考過程
   let cleaned = stripThinkingBlock(content);
 
+  // 🆕 2025-12-14: 處理 stripThinkingBlock 返回 null (meta-instruction 洩漏)
+  if (cleaned === null) {
+    console.log('[ERROR] stripThinkingBlock rejected content due to meta-instruction leak');
+    return null;
+  }
+
   // ✅ 驗證：檢查 meta-instruction
   for (const keyword of metaKeywords) {
     if (cleaned.includes(keyword)) {
@@ -424,8 +492,8 @@ function validateAndFinalizePost(content, topic, metaKeywords) {
 }
 
 /**
- * 過濾掉 LLM 的思考過程區塊 (v2.2)
- * 完整版本，與 linkedin-fact-checker-ollama.js 保持同步
+ * 過濾掉 LLM 的思考過程區塊 (v2.4)
+ * 強化版 - 2025-12-13 修復更多洩漏模式
  */
 function stripThinkingBlock(content) {
   let cleaned = content;
@@ -439,15 +507,80 @@ function stripThinkingBlock(content) {
   // 3. 移除 "[post]" 開頭的指令行 (整行)
   cleaned = cleaned.replace(/^\[post\].*$/gim, '');
 
-  // 4. 移除 "We need..." 開頭的指令行 (整行)
-  cleaned = cleaned.replace(/^We need\s+(to\s+)?(produce|write|ensure|create|make).*$/gim, '');
+  // 4. 移除 "We need..." 開頭的指令行 (整行) - 擴展更多動詞和名詞
+  cleaned = cleaned.replace(/^We need\s+(to\s+)?(produce|write|ensure|create|make|decide|avoid|mention|use|include|focus|consider|highlight|check).*$/gim, '');
+  // 4a. 🆕 移除 "We need a prediction/hook/opening..." 形式 (2025-12-14)
+  cleaned = cleaned.replace(/^We need\s+a\s+(prediction|hook|opening|closing|call|cta|question|statement|strong|bold|creative|compelling|engaging).*$/gim, '');
 
-  // 5. 移除 "Let's..." 開頭的思考行 (整行)
-  cleaned = cleaned.replace(/^Let's\s+(aim|count|draft|approximate|see|check|think|write|plan|structure|organize|ensure|make sure|keep|stay|target|shoot for|produce).*$/gim, '');
+  // 4b. 🆕 移除 "We should..." 開頭的指令行 (2025-12-14 新增 - 修復 prompt leak)
+  cleaned = cleaned.replace(/^We should\s+(not\s+)?(produce|write|ensure|create|make|decide|avoid|mention|use|include|focus|consider|highlight|check|claim|keep).*$/gim, '');
+
+  // 4c. 🆕 移除 "We must..." 開頭的指令行 (2025-12-14 新增 - 修復 prompt leak)
+  cleaned = cleaned.replace(/^We must\s+(not\s+)?(produce|write|ensure|create|make|decide|avoid|mention|use|include|focus|consider|highlight|check).*$/gim, '');
+
+  // 4d. 🆕 移除 "We can..." 開頭的指令行 (2025-12-14 新增 - 修復 prompt leak)
+  cleaned = cleaned.replace(/^We can\s+(say|write|mention|use|include|add).*$/gim, '');
+
+  // 4e. 🆕 移除 "We have many facts..." 開頭的指令行 (2025-12-14 新增 - 修復 prompt leak)
+  cleaned = cleaned.replace(/^We have\s+(many\s+)?(facts|verified|confirmed).*$/gim, '');
+
+  // 4f. 🆕 移除 "Include metrics..." 開頭的指令行 (2025-12-14 新增 - 修復 prompt leak)
+  cleaned = cleaned.replace(/^Include\s+(metrics|numbers|statistics|data).*$/gim, '');
+
+  // 4g. 🆕 移除 "So we can write..." 開頭的指令行 (2025-12-14 新增)
+  cleaned = cleaned.replace(/^So\s+we\s+can\s+(write|say|mention|produce).*$/gim, '');
+
+  // 4h. 🆕 移除模板標記行 "Core insight:", "Real examples:", "Call-to-action:" (2025-12-14)
+  cleaned = cleaned.replace(/^(Core insight|Real examples?|Call-to-action|Opening hook|Main point|Key message|Closing|CTA):\s*["']?.*$/gim, '');
+
+  // 4i. 🆕 移除 "e.g.," / "e.g.:" 開頭的範例行 (2025-12-14)
+  cleaned = cleaned.replace(/^e\.g\.[,:]\s*["']?.*$/gim, '');
+
+  // 4j. 🆕 移除 "Count approximate/roughly" 開頭的計算行 (2025-12-14)
+  cleaned = cleaned.replace(/^Count\s+(approximate|roughly|about|the|characters|words).*$/gim, '');
+
+  // 4k. 🆕 移除 "We'll write/draft/create" 開頭的指令行 (2025-12-14)
+  cleaned = cleaned.replace(/^We'll\s+(write|draft|create|make|produce|use|include|add|start|begin).*$/gim, '');
+
+  // 4l. 🆕 移除 "We will" 開頭的指令行 (2025-12-14)
+  cleaned = cleaned.replace(/^We will\s+(write|draft|create|make|produce|use|include|add|start|begin|need).*$/gim, '');
+
+  // 5. 移除 "Let's..." 開頭的思考行 (整行) - 擴充版 v2.4
+  cleaned = cleaned.replace(/^Let's\s+(aim|count|draft|approximate|see|check|think|write|plan|structure|organize|ensure|make sure|keep|stay|target|shoot for|produce|outline|craft|create|quickly|manually|start|begin|try|do|go|review|verify|calculate|estimate).*$/gim, '');
+
+  // 5b. 移除 "Ok. Let's..." 形式
+  cleaned = cleaned.replace(/^Ok\.?\s*Let's.*$/gim, '');
+
+  // 5c. 移除 "Also mention..." 形式的思考行
+  cleaned = cleaned.replace(/^Also\s+(mention|include|add|note|avoid|use|focus|consider|highlight).*$/gim, '');
+
+  // 5d. 移除 "Should not mention..." 形式
+  cleaned = cleaned.replace(/^Should\s+(not\s+)?(mention|include|avoid|use|focus).*$/gim, '');
+
+  // 5e. 🆕 移除 "Avoid..." 開頭的指令行 (v2.4)
+  cleaned = cleaned.replace(/^Avoid\s+(banned|using|mentioning|overused|these|the|starting|beginning).*$/gim, '');
+
+  // 5f. 🆕 移除 "Write in..." 指令行 (v2.4)
+  cleaned = cleaned.replace(/^Write\s+(in|with|a|the|as|for|about).*$/gim, '');
+
+  // 5g. 🆕 移除 "Now count..." / "Now let's..." 形式 (v2.4)
+  cleaned = cleaned.replace(/^Now\s+(count|let's|we|I'll|check|verify|calculate|draft|write|create).*$/gim, '');
+
+  // 5h. 🆕 移除 "Counterintuitive observation:" 等結構標記 (v2.4)
+  cleaned = cleaned.replace(/^(Counterintuitive observation|Observation|Key insight|Main point|Core message|Opening hook|Strong opening):\s*(e\.g\..*)?$/gim, '');
+
+  // 5i. 🆕 移除 "Share personal..." / "Share your..." 指令 (v2.4)
+  cleaned = cleaned.replace(/^Share\s+(personal|your|a|the|some|insights|experience).*$/gim, '');
+
+  // 5j. 🆕 移除 "Line1:", "Line 1:", etc. 格式標記 (v2.4)
+  cleaned = cleaned.replace(/^Line\s*\d+:.*$/gim, '');
 
   // 6. 移除字數/段落計算行 (整行，包含數字範圍的)
   cleaned = cleaned.replace(/^.*\d+[-–]\d+\s*characters?.*$/gim, '');
   cleaned = cleaned.replace(/^.*~?\d+\s*characters?\.?\s*$/gim, '');
+  cleaned = cleaned.replace(/^Count\s+(characters|words|roughly).*$/gim, '');
+  cleaned = cleaned.replace(/^.*Rough\s+estimate.*$/gim, '');
+  cleaned = cleaned.replace(/^Draft:?\s*$/gim, '');
   cleaned = cleaned.replace(/^.*paragraph breaks?:.*$/gim, '');
   cleaned = cleaned.replace(/^.*\d+\s*paragraphs?.*$/gim, '');
   cleaned = cleaned.replace(/^.*need to keep within.*$/gim, '');
@@ -455,30 +588,66 @@ function stripThinkingBlock(content) {
   cleaned = cleaned.replace(/^.*\d+\s*char(s)?\s*(per|each).*$/gim, '');
 
   // 7. 移除純指令短句 (整行)
-  cleaned = cleaned.replace(/^(Count roughly|That's hook|That's about|Structure:|Format:|Note:|Remember:).*$/gim, '');
+  cleaned = cleaned.replace(/^(Count roughly|That's hook|That's about|That will hook|Structure:|Format:|Note:|Remember:).*$/gim, '');
 
-  // 8. 移除結構標籤前綴但保留內容 (Hook:, CTA:, etc.)
+  // 8. 🆕 移除 "Paragraph N:" 格式的段落標記 (整行)
+  cleaned = cleaned.replace(/^Paragraph\s+\d+:.*$/gim, '');
+
+  // 9. 🆕 移除 "Hook:" / "Example:" 等標記 (整行)
+  cleaned = cleaned.replace(/^(Hook|Example|Main analysis|Key reasons|Opening):\s*["']?.*$/gim, '');
+
+  // 10. 移除結構標籤前綴但保留內容 (Hook:, CTA:, etc.) - 行內版本
   cleaned = cleaned.replace(/\b(Hook:|End with question:|Personal insight:|Then story:|The challenge:|Solution:|Result:)\s*/gim, '');
 
-  // 9. 移除行內的指令片段 (不刪除整行)
+  // 11. 移除行內的指令片段 (不刪除整行)
   cleaned = cleaned.replace(/\s*Paragraph breaks?:\s*\d+\s*paragraphs?\.?\s*/gi, ' ');
   cleaned = cleaned.replace(/\s*\d+-\d+\s*hashtags?\.?\s*/gi, ' ');
   cleaned = cleaned.replace(/\s*CTA:\s*["']?Share your experiences!?["']?\s*/gi, '\n\nShare your experiences!');
 
-  // 10. 移除行尾的 meta 註解
+  // 11b. 🆕 移除行內 meta-instruction (2025-12-14 - 修復 prompt leak)
+  cleaned = cleaned.replace(/Check length:.*?(\.|\n)/gi, '');
+  cleaned = cleaned.replace(/Let's draft and count.*?(\.|\n)/gi, '');
+  cleaned = cleaned.replace(/We'll approximate\.?\s*/gi, '');
+  cleaned = cleaned.replace(/Count approximate:.*?(\.|\n)/gi, '');
+  cleaned = cleaned.replace(/We'll write and then.*?(\.|\n)/gi, '');
+
+  // 12. 移除行尾的 meta 註解
   cleaned = cleaned.replace(/\s*That's\s+(hook|about|the\s+challenge|solution|result)\.?\s*$/gim, '');
 
-  // 11. 移除獨立的數字標記
+  // 13. 🆕 移除 "mention personal experience" 這類指令
+  cleaned = cleaned.replace(/^.*mention\s+(personal\s+experience|failed\s+AI\s+projects|I\s+observe).*$/gim, '');
+
+  // 14. 移除獨立的數字標記
   cleaned = cleaned.replace(/\s+\d{3,4}\.\s*/g, ' ');
 
-  // 12. 清理重複的空格
+  // 15. 清理重複的空格
   cleaned = cleaned.replace(/  +/g, ' ');
 
-  // 13. 清理多餘空行
+  // 16. 清理多餘空行
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
 
-  // 14. 移除開頭結尾空白
+  // 17. 移除開頭結尾空白
   cleaned = cleaned.trim();
+
+  // 18. 🆕 最終驗證：如果還有 meta-instruction 就返回 null (2025-12-14 新增 - 修復 prompt leak)
+  const metaKeywords = [
+    'We should produce', 'We must ensure', 'We need to', 'We need a', 'We have many facts',
+    'We can say', 'Include metrics', 'fabricated claims', 'verified facts',
+    'exaggerated', 'Use conservative', 'Use allowed', 'Format your response',
+    'Output ONLY', 'So we can write', 'Counterintuitive observation:', 'Avoid banned openings',
+    'allowed exaggerations', 'emotional intensity', 'future vision high',
+    'impact scope medium', 'Use conservative for uncertain',
+    'Core insight:', 'Real examples:', 'Call-to-action:', 'e.g.,', 'e.g.:',
+    'Count approximate', "We'll write", "We'll draft", 'We will write', 'We will draft',
+    'Check length:', "Let's draft and count", "We'll approximate"
+  ];
+
+  for (const keyword of metaKeywords) {
+    if (cleaned.includes(keyword)) {
+      console.log(`[ERROR] stripThinkingBlock: Meta-instruction still present: "${keyword}"`);
+      return null;  // 返回 null 讓調用方知道需要重新生成
+    }
+  }
 
   return cleaned;
 }
@@ -516,8 +685,10 @@ function cleanReplyContent(content) {
   const metaKeywords = [
     'We need to reply',
     'We need to write',
+    'We need to add',
     'We should',
     'Let me',
+    'Let\'s',
     'I will',
     'Here is',
     'Here\'s my',
@@ -528,13 +699,30 @@ function cleanReplyContent(content) {
     'Format your response',
     'Output ONLY',
     'Reply to this',
-    'Post from @'
+    'Post from @',
+    'Use 2-3 sentences',
+    'Count characters',
+    'wonder(', // 字數計算痕跡
+    'space=',  // 字數計算痕跡
   ];
 
-  // ✅ 首先移除 thinking 區塊
+  // ✅ 首先移除 thinking 區塊和字數計算痕跡
   let cleaned = content
     .replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '')
     .replace(/<thinking>[\s\S]*?<\/thinking>\s*/gi, '')
+    // 移除字數計算行
+    .replace(/^.*is\s+\d+\.\s*So\s+\d+.*$/gim, '')
+    .replace(/^.*space=\d+.*$/gim, '')
+    .replace(/^.*wonder\(\d+\)=.*$/gim, '')
+    .replace(/^.*Count\s+characters?:?.*$/gim, '')
+    .replace(/^.*\d+[-–]\d+\s*characters?.*$/gim, '')
+    // 🆕 移除 LLM 逐字計數格式: "V(1)e(2)r(3)..." 或 "space(9)" (2025-12-16)
+    .replace(/(?:[A-Za-z]\(\d+\)|space\(\d+\))+/gi, '')
+    .replace(/^Count:.*$/gim, '')
+    // 🆕 移除 token position 計數格式: "word"=N =>M (2025-12-27)
+    .replace(/"\w*"=\d+\s*(?:=>\s*\d+\s*)*/g, '')
+    // 🆕 移除重複的引號內容 (模型輸出兩次相同內容)
+    .replace(/^(.{50,}?)\s*\1/gm, '$1')
     .trim();
 
   // ✅ 優先：提取 "FINAL REPLY:" 後的內容
@@ -596,7 +784,20 @@ function cleanReplyContent(content) {
  * 驗證回覆內容
  */
 function validateReply(content, metaKeywords) {
-  const cleaned = content.substring(0, 500);
+  let cleaned = content.substring(0, 500);
+
+  // ✅ 先清理字數計算的痕跡
+  cleaned = cleaned
+    .replace(/^.*is\s+\d+\.\s*So\s+\d+.*$/gim, '')  // "is 6. So 111"
+    .replace(/^.*space=\d+.*$/gim, '')              // "space=112"
+    .replace(/^.*Count\s+characters?:?.*$/gim, '')  // "Count characters:"
+    .replace(/^.*\d+\s*characters?\.?.*$/gim, '')   // "150-250 characters"
+    .replace(/^.*\(?\d+\s*inc\s+hyphen.*$/gim, '')  // "(10 inc hyphen?)"
+    // 🆕 移除 LLM 逐字計數格式: "V(1)e(2)r(3)..." (2025-12-16)
+    .replace(/(?:[A-Za-z]\(\d+\)|space\(\d+\))+/gi, '')
+    .replace(/^Count:.*$/gim, '')
+    .replace(/\s+/g, ' ')                            // 合併多餘空格
+    .trim();
 
   // ✅ 驗證：檢查 meta-instruction
   for (const keyword of metaKeywords) {
@@ -606,9 +807,12 @@ function validateReply(content, metaKeywords) {
     }
   }
 
+  // ✅ 驗證：檢查是否是原文複製（與 post 內容重疊超過 50%）
+  // （這個檢查在 generateLinkedInReply 中進行，因為需要原始 postText）
+
   // ✅ 驗證：長度檢查
   if (cleaned.length < 30) {
-    console.log('[ERROR] Reply too short. Rejecting.');
+    console.log('[ERROR] Reply too short after cleaning. Rejecting.');
     return null;
   }
 

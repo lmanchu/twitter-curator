@@ -598,9 +598,16 @@ async function searchRelevantPosts(page) {
             }
           }
 
-          // 如果沒有找到 postId，使用 index 作為臨時 ID
+          // 如果沒有找到 postId，使用 content hash 作為穩定 ID（避免重複回覆）
           if (!postId) {
-            postId = `temp-${Date.now()}-${index}`;
+            // 用 author + text 前 100 字產生穩定的 hash
+            const hashSource = `${author}:${text.substring(0, 100)}`;
+            let hash = 0;
+            for (let i = 0; i < hashSource.length; i++) {
+              hash = ((hash << 5) - hash) + hashSource.charCodeAt(i);
+              hash = hash & hash; // Convert to 32bit integer
+            }
+            postId = `content-${Math.abs(hash).toString(36)}`;
           }
 
           console.log(`[DEBUG] Post ${index}: author="${author}", text length=${text.length}, postId="${postId}"`);

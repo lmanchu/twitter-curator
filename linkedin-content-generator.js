@@ -2,8 +2,10 @@
 
 /**
  * Content Generator for LinkedIn Curator
- * 使用 Ollama 本地模型生成符合 Persona 的 LinkedIn 貼文和回覆
+ * 使用 CLIProxyAPI (優先) 或 Ollama 本地模型生成符合 Persona 的 LinkedIn 貼文和回覆
  *
+ * v2.6 - 2026-01-04: 整合 CLIProxyAPI 作為主要 AI 來源
+ *   - CLIProxyAPI (OAuth Gemini/Claude) → Ollama fallback
  * v2.5 - 2025-12-14: 修復 prompt leak bug
  *   - 新增 "We should/must/can/have" 等 meta-instruction 過濾
  *   - stripThinkingBlock 現在返回 null 如果檢測到殘留指令
@@ -14,6 +16,11 @@ require('dotenv').config();
 
 const { execSync } = require('child_process');
 const fs = require('fs');
+
+// CLIProxyAPI configuration (unified AI proxy - OAuth-based, no quota limits)
+const CLIPROXY_URL = process.env.CLIPROXY_URL || 'http://127.0.0.1:8317';
+const CLIPROXY_API_KEY = process.env.CLIPROXY_API_KEY || 'magi-proxy-key-2026';
+const CLIPROXY_MODEL = process.env.CLIPROXY_MODEL || 'gemini-2.5-flash';
 
 /**
  * 從 Persona 提取關鍵信息
@@ -267,8 +274,8 @@ function getLinkedInAnimeAnalogy(postText) {
 const REPLY_IDENTITIES = [
   'Lman, a tech entrepreneur',
   'Lman, startup founder',
-  'Lman, AI enthusiast and builder',
-  'Lman, product-focused founder'
+  'Lman, product-focused founder',
+  'Lman, someone who builds tech products'
 ];
 
 /**
@@ -298,6 +305,7 @@ Requirements:
 - Do NOT mention any company name
 - No hashtags
 - Do NOT copy or repeat the original post content
+- NEVER start with "As an AI" or "As a [role]" - just speak naturally
 
 Output ONLY your comment text in English, nothing else.`;
   } else {
@@ -314,6 +322,7 @@ Requirements:
 - Do NOT mention any company name
 - No hashtags
 - Do NOT copy or repeat the original post content
+- NEVER start with "As an AI" or "As a [role]" - just speak naturally
 
 Output ONLY your comment text in English, nothing else.`;
   }
@@ -366,11 +375,42 @@ function isContentDuplicate(reply, originalPost) {
 }
 
 /**
- * 調用本地 Ollama API
+ * 調用 CLIProxyAPI (優先) 或 Ollama 本地模型
+ * CLIProxyAPI 提供 OAuth-based Gemini/Claude，無配額限制
  */
 async function callOllamaAPI(prompt) {
+  // ===== Step 1: Try CLIProxyAPI first =====
+  try {
+    console.log('[INFO] Trying CLIProxyAPI...');
+    const response = await fetch(`${CLIPROXY_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLIPROXY_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: CLIPROXY_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 500
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.choices && data.choices[0].message.content) {
+      console.log(`[INFO] CLIProxyAPI success (model: ${CLIPROXY_MODEL})`);
+      return data.choices[0].message.content;
+    }
+
+    throw new Error('Invalid CLIProxyAPI response');
+
+  } catch (cliproxyError) {
+    console.log(`[WARN] CLIProxyAPI failed: ${cliproxyError.message}, falling back to Ollama...`);
+  }
+
+  // ===== Step 2: Fallback to Ollama =====
   const url = 'http://localhost:11434/api/generate';
-  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3-vl:30b (MoE)
   const models = ['gpt-oss:20b', 'qwen3-vl:30b'];
 
   for (const model of models) {
@@ -393,15 +433,11 @@ async function callOllamaAPI(prompt) {
       const response = execSync(command, { encoding: 'utf-8', timeout: 90000 });
       const data = JSON.parse(response);
 
-      // ✅ Always prefer data.response (actual output)
-      // data.thinking is the model's internal reasoning - should NOT be returned
       if (data.response) {
-        console.log(`[INFO] Using model: ${model}`);
+        console.log(`[INFO] Ollama success (model: ${model})`);
         return data.response;
       } else if (data.thinking) {
-        // Fallback: some models only return thinking
-        console.log(`[WARN] Model ${model} only returned thinking, extracting content...`);
-        // Strip thinking markers if present
+        console.log(`[WARN] Model ${model} only returned thinking, extracting...`);
         let content = data.thinking;
         content = content.replace(/Thinking\.{3}[\s\S]*?\.{3}done thinking\.\s*/gi, '');
         content = content.replace(/<thinking>[\s\S]*?<\/thinking>\s*/gi, '');
@@ -412,12 +448,12 @@ async function callOllamaAPI(prompt) {
       throw new Error('No valid response from model');
 
     } catch (error) {
-      console.log(`[WARN] Model ${model} failed: ${error.message}, trying next...`);
+      console.log(`[WARN] Ollama ${model} failed: ${error.message}, trying next...`);
       continue;
     }
   }
 
-  throw new Error('All Ollama models failed');
+  throw new Error('All AI providers failed (CLIProxyAPI + Ollama)');
 }
 
 /**
@@ -721,6 +757,10 @@ function cleanReplyContent(content) {
     .replace(/^Count:.*$/gim, '')
     // 🆕 移除 token position 計數格式: "word"=N =>M (2025-12-27)
     .replace(/"\w*"=\d+\s*(?:=>\s*\d+\s*)*/g, '')
+    // 🆕 移除無括號字元計數: "o2p3 space4o5n6—7c8..." (2025-12-28)
+    // 匹配: 字元或"space"後接數字，重複5次以上
+    .replace(/"\s*(?:space|[a-zA-Z—,.])\d{1,3}(?:\s*(?:space|[a-zA-Z—,.])\d{1,3}){5,}.*/gi, '')
+    .replace(/\s+(?:space|[a-zA-Z—,.])\d{1,3}(?:\s*(?:space|[a-zA-Z—,.])\d{1,3}){5,}$/gi, '')
     // 🆕 移除重複的引號內容 (模型輸出兩次相同內容)
     .replace(/^(.{50,}?)\s*\1/gm, '$1')
     .trim();
@@ -796,6 +836,10 @@ function validateReply(content, metaKeywords) {
     // 🆕 移除 LLM 逐字計數格式: "V(1)e(2)r(3)..." (2025-12-16)
     .replace(/(?:[A-Za-z]\(\d+\)|space\(\d+\))+/gi, '')
     .replace(/^Count:.*$/gim, '')
+    // 🆕 移除無括號字元計數: "o2p3 space4o5n6—7c8..." (2025-12-28)
+    // 匹配: 字元或"space"後接數字，重複5次以上
+    .replace(/"\s*(?:space|[a-zA-Z—,.])\d{1,3}(?:\s*(?:space|[a-zA-Z—,.])\d{1,3}){5,}.*/gi, '')
+    .replace(/\s+(?:space|[a-zA-Z—,.])\d{1,3}(?:\s*(?:space|[a-zA-Z—,.])\d{1,3}){5,}$/gi, '')
     .replace(/\s+/g, ' ')                            // 合併多餘空格
     .trim();
 

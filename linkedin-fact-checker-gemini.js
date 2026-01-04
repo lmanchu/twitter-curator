@@ -1,28 +1,45 @@
 #!/usr/bin/env node
 
 /**
- * LinkedIn Fact Checker - Gemini Version
+ * LinkedIn Fact Checker
  *
  * 用途: 確保 LinkedIn 貼文基於真實事實，消除幻想內容
  * 架構: Draft → Fact-Check → Correct
- * API: Google Gemini 2.0 Flash (使用既有 API key)
+ * API: CLIProxyAPI (unified AI proxy - OAuth-based, no quota limits)
  */
 
 const fs = require('fs');
 const path = require('path');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Try to load config from twitter-curator if available
-let config;
-try {
-  config = require('../../../twitter-curator/config');
-} catch (e) {
-  config = {};
+// CLIProxyAPI configuration (unified AI proxy)
+const CLIPROXY_URL = process.env.CLIPROXY_URL || 'http://127.0.0.1:8317';
+const CLIPROXY_API_KEY = process.env.CLIPROXY_API_KEY || 'magi-proxy-key-2026';
+const CLIPROXY_MODEL = process.env.CLIPROXY_MODEL || 'gemini-2.5-flash';
+
+// Helper function to call CLIProxyAPI
+async function callAI(prompt, maxTokens = 2048) {
+  const response = await fetch(`${CLIPROXY_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${CLIPROXY_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: CLIPROXY_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: maxTokens
+    })
+  });
+
+  const data = await response.json();
+
+  if (!data.choices || !data.choices[0].message.content) {
+    throw new Error('Invalid response from CLIProxyAPI');
+  }
+
+  return data.choices[0].message.content;
 }
-
-// 初始化 Gemini
-const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY || process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
 // 載入 Ground Truth 資料庫
 function loadGroundTruth() {
@@ -89,9 +106,7 @@ ${context ? JSON.stringify(context, null, 2) : '無'}
 
 請生成 LinkedIn 貼文草稿。`;
 
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  return response.text();
+  return await callAI(prompt);
 }
 
 // Step 2: 事實核查（驗證層）
@@ -142,9 +157,7 @@ ${JSON.stringify(groundTruth, null, 2)}
 
 請嚴格輸出 JSON，不要其他文字。`;
 
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const text = response.text();
+  const text = await callAI(prompt);
 
   // 提取 JSON（處理可能的 markdown code block）
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
@@ -190,14 +203,14 @@ ${JSON.stringify(groundTruth, null, 2)}
 
 輸出修正後的完整貼文（純文字，不要 markdown）。`;
 
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  return response.text().trim();
+  const text = await callAI(prompt);
+  return text.trim();
 }
 
 // 主流程
 async function generateLinkedInPost(topic, context = null) {
-  console.log('🚀 LinkedIn Post Generator with Fact-Checking (Gemini)\n');
+  console.log('🚀 LinkedIn Post Generator with Fact-Checking (CLIProxyAPI)\n');
+  console.log(`   Model: ${CLIPROXY_MODEL}\n`);
 
   try {
     // Step 1: 生成草稿

@@ -235,10 +235,42 @@ Reply:`;
 }
 
 /**
- * 直接調用 OpenAI API (用於 content extraction 失敗時)
+ * 調用 CLIProxyAPI (用於 content extraction 失敗時)
+ * CLIProxyAPI 統一代理 Gemini OAuth / OpenAI，繞過 Free Tier 限制
  */
 async function callOpenAIDirect(prompt) {
-  const openaiKey = 'process.env.OPENAI_API_KEY';
+  // 優先使用 CLIProxyAPI (gemini-2.5-flash via OAuth)
+  const proxyUrl = process.env.CLIPROXY_URL || 'http://127.0.0.1:8317';
+  const proxyKey = process.env.CLIPROXY_API_KEY || 'magi-proxy-key-2026';
+
+  const payload = {
+    model: 'gemini-2.5-flash',  // OAuth 模型，繞過 Free Tier
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 200
+  };
+
+  try {
+    const proxyCommand = `curl -s -X POST '${proxyUrl}/v1/chat/completions' \
+      -H 'Content-Type: application/json' \
+      -H 'Authorization: Bearer ${proxyKey}' \
+      -d '${JSON.stringify(payload).replace(/'/g, "'\\''")}'`;
+
+    const proxyResponse = execSync(proxyCommand, { encoding: 'utf-8', timeout: 30000 });
+    const proxyData = JSON.parse(proxyResponse);
+
+    if (proxyData.choices && proxyData.choices[0]?.message?.content) {
+      console.log('[INFO] ✅ Using CLIProxyAPI gemini-2.5-flash (OAuth fallback)');
+      return proxyData.choices[0].message.content.trim();
+    }
+  } catch (proxyError) {
+    console.log(`[WARN] CLIProxyAPI failed: ${proxyError.message}, trying OpenAI...`);
+  }
+
+  // Fallback: 直接 OpenAI (保留作為最後手段)
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) return null;
+
   const openaiPayload = {
     model: 'gpt-4o-mini',
     messages: [{ role: 'user', content: prompt }],
@@ -255,7 +287,7 @@ async function callOpenAIDirect(prompt) {
   const openaiData = JSON.parse(openaiResponse);
 
   if (openaiData.choices && openaiData.choices[0]?.message?.content) {
-    console.log('[INFO] ✅ Using OpenAI gpt-4o-mini (content extraction fallback)');
+    console.log('[INFO] ✅ Using OpenAI gpt-4o-mini (final fallback)');
     return openaiData.choices[0].message.content.trim();
   }
   return null;
@@ -456,10 +488,42 @@ async function callGeminiAPI(prompt, apiKey) {
     }
   }
 
-  // ✅ Final fallback: OpenAI API
-  console.log('[WARN] All Ollama models failed, falling back to OpenAI...');
+  // ✅ Final fallback: CLIProxyAPI → OpenAI
+  console.log('[WARN] All Ollama models failed, falling back to CLIProxyAPI...');
+
+  // 1. 優先嘗試 CLIProxyAPI (gemini-2.5-flash via OAuth)
+  const proxyUrl = process.env.CLIPROXY_URL || 'http://127.0.0.1:8317';
+  const proxyKey = process.env.CLIPROXY_API_KEY || 'magi-proxy-key-2026';
+
   try {
-    const openaiKey = 'process.env.OPENAI_API_KEY';
+    const proxyPayload = {
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 200
+    };
+
+    const proxyCommand = `curl -s -X POST '${proxyUrl}/v1/chat/completions' \
+      -H 'Content-Type: application/json' \
+      -H 'Authorization: Bearer ${proxyKey}' \
+      -d '${JSON.stringify(proxyPayload).replace(/'/g, "'\\''")}'`;
+
+    const proxyResponse = execSync(proxyCommand, { encoding: 'utf-8', timeout: 30000 });
+    const proxyData = JSON.parse(proxyResponse);
+
+    if (proxyData.choices && proxyData.choices[0]?.message?.content) {
+      console.log('[INFO] Using model: CLIProxyAPI gemini-2.5-flash (OAuth fallback)');
+      return proxyData.choices[0].message.content;
+    }
+  } catch (proxyError) {
+    console.log(`[WARN] CLIProxyAPI failed: ${proxyError.message}, trying OpenAI...`);
+  }
+
+  // 2. 最後嘗試 OpenAI
+  try {
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) throw new Error('No OpenAI API key');
+
     const openaiPayload = {
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -476,14 +540,14 @@ async function callGeminiAPI(prompt, apiKey) {
     const openaiData = JSON.parse(openaiResponse);
 
     if (openaiData.choices && openaiData.choices[0]?.message?.content) {
-      console.log('[INFO] Using model: OpenAI gpt-4o-mini (fallback)');
+      console.log('[INFO] Using model: OpenAI gpt-4o-mini (final fallback)');
       return openaiData.choices[0].message.content;
     }
 
     throw new Error('No valid response from OpenAI');
   } catch (openaiError) {
-    console.log(`[ERROR] OpenAI fallback failed: ${openaiError.message}`);
-    throw new Error('All AI models failed (Ollama + OpenAI)');
+    console.log(`[ERROR] All fallbacks failed: ${openaiError.message}`);
+    throw new Error('All AI models failed (Ollama + CLIProxyAPI + OpenAI)');
   }
 }
 

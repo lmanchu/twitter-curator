@@ -82,7 +82,7 @@ Hook template: ${randomHook}
 
 Requirements:
 - Max 280 characters
-- English only
+- Write in BOTH English AND Traditional Chinese (雙語): English first, then Chinese translation on new line
 - NO hashtags, minimal emojis
 - Direct and authentic tone
 - Business insight + technical depth
@@ -195,21 +195,70 @@ ${hookGuidance}
 Instructions:
 - Write a helpful, insightful reply
 - Max 280 characters
-- English only
+- Write in BOTH English AND Traditional Chinese (雙語): English first, then Chinese translation on new line
 - Be conversational and add value
 - Technical but friendly
 - Make it invite further engagement (replies, likes)
+- DO NOT paraphrase or repeat the original tweet content
+- Provide a NEW perspective, question, or personal insight
+- Your reply must be SUBSTANTIALLY DIFFERENT from the original tweet
 ${avoidGuidance}
 
 Reply:`;
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);
-    return cleanContent(response);
+    const cleaned = cleanContent(response);
+
+    // ✅ 如果 cleanContent 失敗，直接用 OpenAI 重試
+    if (!cleaned || cleaned.length < 10) {
+      console.log('[WARN] cleanContent failed, retrying with OpenAI directly...');
+      const openaiReply = await callOpenAIDirect(prompt);
+      if (openaiReply) {
+        return openaiReply;
+      }
+    }
+
+    return cleaned;
   } catch (error) {
     console.error('Error generating reply:', error.message);
-    return null;
+    // ✅ 最後嘗試 OpenAI
+    try {
+      console.log('[WARN] Ollama failed, trying OpenAI as last resort...');
+      const openaiReply = await callOpenAIDirect(prompt);
+      return openaiReply;
+    } catch (e) {
+      console.error('OpenAI fallback also failed:', e.message);
+      return null;
+    }
   }
+}
+
+/**
+ * 直接調用 OpenAI API (用於 content extraction 失敗時)
+ */
+async function callOpenAIDirect(prompt) {
+  const openaiKey = 'process.env.OPENAI_API_KEY';
+  const openaiPayload = {
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 200
+  };
+
+  const openaiCommand = `curl -s -X POST 'https://api.openai.com/v1/chat/completions' \
+    -H 'Content-Type: application/json' \
+    -H 'Authorization: Bearer ${openaiKey}' \
+    -d '${JSON.stringify(openaiPayload).replace(/'/g, "'\\''")}'`;
+
+  const openaiResponse = execSync(openaiCommand, { encoding: 'utf-8', timeout: 30000 });
+  const openaiData = JSON.parse(openaiResponse);
+
+  if (openaiData.choices && openaiData.choices[0]?.message?.content) {
+    console.log('[INFO] ✅ Using OpenAI gpt-4o-mini (content extraction fallback)');
+    return openaiData.choices[0].message.content.trim();
+  }
+  return null;
 }
 
 /**
@@ -234,11 +283,14 @@ Tweet from @${tweetAuthor}: "${tweetText}"
 Instructions:
 - Write as an enthusiastic fan, NOT as a tech expert
 - Max 280 characters
-- English only
+- Write in BOTH English AND Japanese (EN + 日本語): English first, then Japanese on new line
+- Use natural anime fan expressions like すごい、最高、神回 etc.
 - Express genuine appreciation or excitement
 - Be friendly and relatable
 - Share what you love about it (favorite scene, character, moment)
 - OK to connect it briefly to tech/AI if natural, but focus on fan appreciation
+- DO NOT repeat or paraphrase the original tweet
+- Your reply must add NEW content (your opinion, question, or excitement)
 - Avoid: ${avoidList || 'spoilers, negativity, controversy'}
 - Include: ${includeList || 'appreciation, favorite moment'}
 
@@ -246,10 +298,26 @@ Reply:`;
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);
-    return cleanContent(response);
+    const cleaned = cleanContent(response);
+
+    // ✅ 如果 cleanContent 失敗，直接用 OpenAI 重試
+    if (!cleaned || cleaned.length < 10) {
+      console.log('[WARN] cleanContent failed for interest reply, retrying with OpenAI...');
+      const openaiReply = await callOpenAIDirect(prompt);
+      if (openaiReply) {
+        return openaiReply;
+      }
+    }
+
+    return cleaned;
   } catch (error) {
     console.error('Error generating interest reply:', error.message);
-    return null;
+    try {
+      const openaiReply = await callOpenAIDirect(prompt);
+      return openaiReply;
+    } catch (e) {
+      return null;
+    }
   }
 }
 
@@ -296,11 +364,13 @@ ${categoryGuidance}
 
 Instructions:
 - Max 280 characters
-- English only
+- Write in BOTH English AND Traditional Chinese (雙語): English first, then Chinese translation on new line
 - Add genuine value - share a unique insight or perspective
 - Be professional but not sycophantic
 - Show expertise without being arrogant
 - Ask a thought-provoking question OR share a contrarian insight
+- DO NOT repeat or paraphrase the original tweet
+- Your reply must be SUBSTANTIALLY DIFFERENT - add your own angle
 - Avoid: ${avoidList || 'flattery, self-promotion, generic praise'}
 - Include: ${includeList || 'unique perspective, relevant experience'}
 
@@ -308,21 +378,37 @@ Reply:`;
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);
-    return cleanContent(response);
+    const cleaned = cleanContent(response);
+
+    // ✅ 如果 cleanContent 失敗，直接用 OpenAI 重試
+    if (!cleaned || cleaned.length < 10) {
+      console.log('[WARN] cleanContent failed for tracked reply, retrying with OpenAI...');
+      const openaiReply = await callOpenAIDirect(prompt);
+      if (openaiReply) {
+        return openaiReply;
+      }
+    }
+
+    return cleaned;
   } catch (error) {
     console.error('Error generating tracked reply:', error.message);
-    return null;
+    try {
+      const openaiReply = await callOpenAIDirect(prompt);
+      return openaiReply;
+    } catch (e) {
+      return null;
+    }
   }
 }
 
 /**
- * 調用本地 Ollama API (gpt-oss:20b with fallback)
+ * 調用本地 Ollama API (gpt-oss:20b with fallback to OpenAI)
  */
 async function callGeminiAPI(prompt, apiKey) {
   const url = 'http://localhost:11434/api/generate';
 
-  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3-vl:30b (MoE)
-  const models = ['gpt-oss:20b', 'qwen3-vl:30b'];
+  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3-coder:30b
+  const models = ['gpt-oss:20b', 'qwen3-coder:30b'];
 
   for (const model of models) {
     try {
@@ -370,7 +456,35 @@ async function callGeminiAPI(prompt, apiKey) {
     }
   }
 
-  throw new Error('All Ollama models failed');
+  // ✅ Final fallback: OpenAI API
+  console.log('[WARN] All Ollama models failed, falling back to OpenAI...');
+  try {
+    const openaiKey = 'process.env.OPENAI_API_KEY';
+    const openaiPayload = {
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 200
+    };
+
+    const openaiCommand = `curl -s -X POST 'https://api.openai.com/v1/chat/completions' \
+      -H 'Content-Type: application/json' \
+      -H 'Authorization: Bearer ${openaiKey}' \
+      -d '${JSON.stringify(openaiPayload).replace(/'/g, "'\\''")}'`;
+
+    const openaiResponse = execSync(openaiCommand, { encoding: 'utf-8', timeout: 30000 });
+    const openaiData = JSON.parse(openaiResponse);
+
+    if (openaiData.choices && openaiData.choices[0]?.message?.content) {
+      console.log('[INFO] Using model: OpenAI gpt-4o-mini (fallback)');
+      return openaiData.choices[0].message.content;
+    }
+
+    throw new Error('No valid response from OpenAI');
+  } catch (openaiError) {
+    console.log(`[ERROR] OpenAI fallback failed: ${openaiError.message}`);
+    throw new Error('All AI models failed (Ollama + OpenAI)');
+  }
 }
 
 /**

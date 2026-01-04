@@ -43,8 +43,8 @@ module.exports = {
   // 每小時發文數量
   POSTS_PER_HOUR: 1,
 
-  // 每小時回覆數量（降低為 2 則，配合白天回文）
-  REPLIES_PER_HOUR: 2,
+  // 每小時回覆數量（提升為 3 則，增加曝光）
+  REPLIES_PER_HOUR: 3,
 
   // ========================================
   // 🎨 內容配置
@@ -175,7 +175,7 @@ module.exports = {
   },
 
   // 語言設定
-  LANGUAGE: 'en',  // 僅英文
+  LANGUAGE: 'bilingual',  // 雙語 (EN+ZH) - 分析顯示雙語貼文表現更好
 
   // 內容風格
   STYLE: {
@@ -206,7 +206,11 @@ module.exports = {
       'startup', 'product', 'pm',
       'web3', 'blockchain', 'on-premise',
       'privacy', 'enterprise ai',
-      'intel', 'ai pc'
+      'intel', 'ai pc',
+      // 基礎設施/網路技術 (高流量來源)
+      'infrastructure', 'networking', 'kubernetes', 'k8s',
+      'bgp', 'micro-kernel', 'linux', 'devops', 'sre',
+      'arista', 'cisco', 'cloud native', 'docker', 'container'
     ],
 
     // 排除的關鍵詞
@@ -314,9 +318,9 @@ module.exports = {
 
   // 每日限制
   DAILY_LIMITS: {
-    max_posts: 10,      // 最多 10 則發文（夜間 4 次 x 1 則 = 4，留 buffer）
-    max_replies: 30,    // 最多 30 則回覆（夜間 4x2=8 + 白天 16x1=16 = 24，留 buffer）
-    max_total: 50       // Twitter 每日總限制
+    max_posts: 10,      // 最多 10 則發文
+    max_replies: 40,    // 最多 40 則回覆（夜間 8x3=24 + 白天 5x3=15）
+    max_total: 60       // Twitter 每日總限制
   },
 
   // ========================================
@@ -342,9 +346,9 @@ module.exports = {
 
     // 速率限制
     rate_limits: {
-      max_replies_per_hour: 3,     // 每小時最多 3 則回覆
-      cooldown_after_burst: 30,    // 連續動作後冷卻 30 分鐘
-      burst_threshold: 5,          // 5 則以上視為 burst
+      max_replies_per_hour: 4,     // 每小時最多 4 則回覆（留 buffer）
+      cooldown_after_burst: 20,    // 連續動作後冷卻 20 分鐘
+      burst_threshold: 6,          // 6 則以上視為 burst
     }
   },
 

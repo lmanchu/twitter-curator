@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-01-04
+
+### 🚀 OpenAI Fallback & Reply Quality Improvements
+
+This version adds OpenAI gpt-4o-mini as a fallback when Ollama content extraction fails, and improves reply generation prompts to reduce "too similar" rejections.
+
+### Added
+- ✅ **OpenAI gpt-4o-mini fallback** for all three reply functions:
+  - `generateReply()` - standard replies
+  - `generateInterestReply()` - anime/entertainment replies
+  - `generateTrackedReply()` - tracked account replies
+  - New `callOpenAIDirect()` helper function
+  - Fallback triggers when `cleanContent()` fails or returns < 10 chars
+
+### Changed
+- 📝 **Improved reply prompts** to reduce content repetition:
+  - Added "DO NOT paraphrase or repeat the original tweet"
+  - Added "Your reply must be SUBSTANTIALLY DIFFERENT"
+  - Should reduce "Reply too similar to original" skips
+
+- 📊 **Twitter config optimizations**:
+  - `REPLIES_PER_HOUR`: 2 → 3
+  - `max_replies`: 30 → 40
+  - `max_total`: 50 → 60
+
+- 📊 **LinkedIn config optimizations**:
+  - `CONTENT_LENGTH.ideal`: 1000 → 1800 (longer posts for better engagement)
+  - `DAILY_REPLIES`: 6 → 10
+
+### Fixed
+- 🐛 **Model fallback chain**: Changed from non-existent `qwen3-vl:30b` to `qwen3-coder:30b`
+- 🐛 **"Reply generation failed"** now properly falls back to OpenAI instead of silently failing
+
 ## [2.1.0] - 2025-12-05
 
 ### 🔧 LinkedIn Curator Improvements

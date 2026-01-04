@@ -36,8 +36,8 @@ module.exports = {
   // 每日發文數量
   DAILY_POSTS: 3,
 
-  // 每日回覆數量
-  DAILY_REPLIES: 6,
+  // 每日回覆數量（提升曝光）
+  DAILY_REPLIES: 10,
 
   // ========================================
   // 🎨 內容配置
@@ -149,11 +149,11 @@ module.exports = {
     'Local-first software architecture'
   ],
 
-  // 內容長度（LinkedIn 允許更長）
+  // 內容長度（LinkedIn 獎勵 dwell time，越長越好）
   CONTENT_LENGTH: {
-    min: 200,
+    min: 500,
     max: 3000,
-    ideal: 1000    // LinkedIn sweet spot
+    ideal: 1800    // LinkedIn sweet spot for engagement
   },
 
   // 語言設定
@@ -232,11 +232,11 @@ module.exports = {
   // 🛡️ 安全限制
   // ========================================
 
-  // 每日限制（LinkedIn 較保守）
+  // 每日限制（LinkedIn 較保守但可提高）
   DAILY_LIMITS: {
     max_posts: 3,       // 每日最多 3 則發文
-    max_replies: 6,     // 每日最多 6 則回覆
-    max_total: 10       // LinkedIn 每日總限制
+    max_replies: 12,    // 每日最多 12 則回覆
+    max_total: 15       // LinkedIn 每日總限制
   },
 
   // 延遲設定（毫秒）- LinkedIn 需要更長延遲

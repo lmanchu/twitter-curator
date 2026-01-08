@@ -102,6 +102,78 @@ const IDENTITY_POOLS = {
   ]
 };
 
+// ============================================
+// 🏢 品牌模式 Prompt 模板
+// ============================================
+
+/**
+ * 品牌 LinkedIn 貼文 Prompt（公司視角，不用個人經驗）
+ */
+function getBrandLinkedInPostPrompt(brandConfig, topic, hookStyle) {
+  return `Write a professional LinkedIn post as the ${brandConfig.name} brand voice.
+
+CRITICAL RULES:
+- NEVER use first-person singular ("I", "my", "me")
+- NEVER reference personal experience ("After N years...", "In my career...", "When I was...")
+- Use brand perspective: "We at ${brandConfig.name}...", "${brandConfig.name} believes...", "Our approach..."
+- Focus on industry insights and thought leadership
+- Write from company perspective, not individual founder
+
+Brand Context:
+- Brand: ${brandConfig.name}
+- Tagline: ${brandConfig.tagline}
+- Voice: ${brandConfig.voice}
+
+Topic: ${topic}
+Opening Style: ${hookStyle}
+
+Requirements for final post:
+- Length: 600-1000 characters
+- English only
+- Professional yet conversational
+- Strong, specific opening (follow the style above)
+- Share industry insights and perspective (NOT personal experience)
+- End with a question or call-to-action
+- Use paragraph breaks for readability
+- 3-5 relevant hashtags at the end
+- Do NOT mention specific company names unless relevant to the industry discussion
+
+Output ONLY the final post text - no planning notes or meta-commentary.
+
+Format your response as:
+FINAL POST: [your actual LinkedIn post here]`;
+}
+
+/**
+ * 品牌 LinkedIn 回覆 Prompt（公司視角）
+ */
+function getBrandLinkedInReplyPrompt(brandConfig, postText, postAuthor) {
+  return `Write a professional LinkedIn comment reply as the ${brandConfig.name} brand voice.
+
+CRITICAL RULES:
+- NEVER use first-person singular ("I", "my", "me")
+- NEVER reference personal experience ("After N years...", "In my career...")
+- Use brand perspective: "We see this too...", "At ${brandConfig.name}, we believe...", "This aligns with..."
+- Add value through industry insight, not personal stories
+
+Brand Context:
+- Brand: ${brandConfig.name}
+- Voice: ${brandConfig.voice}
+
+Post from @${postAuthor}: "${postText}"
+
+Requirements:
+- Write 2-3 sentences (100-200 characters)
+- ENGLISH ONLY
+- Add value: share perspective, ask thoughtful question, or offer insight
+- Be conversational and professional
+- No hashtags
+- Do NOT copy or repeat the original post content
+- NEVER start with "As an AI" or "As a [role]"
+
+Output ONLY your comment text in English, nothing else.`;
+}
+
 /**
  * 主題分類 - 決定使用哪種身份
  */
@@ -147,28 +219,22 @@ function selectIdentity(topic) {
 
 /**
  * 使用 Ollama 生成 LinkedIn 原創貼文
+ * @param {string} persona - Persona 內容
+ * @param {string} topic - 貼文主題
+ * @param {Object|null} brandConfig - 品牌配置（品牌模式時使用）
  */
-async function generateLinkedInPost(persona, topic) {
+async function generateLinkedInPost(persona, topic, brandConfig = null) {
   const personaSummary = extractPersonaSummary(persona);
-  const identity = selectIdentity(topic);
-  const topicType = categorizeTopicType(topic);
 
   // ✨ Hook 多樣化系統 - 20 種具體開頭範例
   const hookExamples = [
     'Start with a surprising statistic or data point',
-    'Open with a brief personal failure story',
     'Challenge a common industry assumption',
-    'Share a recent "aha moment" from your work',
     'Describe a problem your audience faces daily',
-    'Use a brief case study from your experience',
     'Start with what most people get wrong about [topic]',
     'Open with a counterintuitive observation',
-    'Share the worst advice you ever received',
-    'Describe what changed your perspective recently',
     'Start with a common mistake you see professionals make',
-    'Open with a specific example from this week',
     'Challenge conventional wisdom with evidence',
-    'Share an unexpected lesson from a project',
     'Describe a trend everyone else is missing',
     'Start with what nobody talks about in [industry]',
     'Open with a comparison that makes people think',
@@ -178,15 +244,46 @@ async function generateLinkedInPost(persona, topic) {
   ];
   const randomStyle = hookExamples[Math.floor(Math.random() * hookExamples.length)];
 
+  // 🏢 品牌模式：使用品牌 prompt 模板
+  if (brandConfig) {
+    console.log(`[INFO] 🏢 Using brand prompt for LinkedIn post: ${brandConfig.name}`);
+    const brandPrompt = getBrandLinkedInPostPrompt(brandConfig, topic, randomStyle);
+
+    try {
+      const response = await callOllamaAPI(brandPrompt);
+      return cleanLinkedInContent(response, topic);
+    } catch (error) {
+      console.error('Error generating brand LinkedIn post:', error.message);
+      return null;
+    }
+  }
+
+  // 👤 個人模式：使用原有 Lman 身份
+  const identity = selectIdentity(topic);
+  const topicType = categorizeTopicType(topic);
+
   // 根據主題類型決定是否可以提 IrisGo
   const companyMentionRule = topicType === 'product'
     ? '- You MAY mention IrisGo.AI naturally if relevant'
     : '- Do NOT mention any company name - focus on general insights';
 
+  // 個人模式額外的 hook（包含個人經驗）
+  const personalHooks = [
+    'Open with a brief personal failure story',
+    'Share a recent "aha moment" from your work',
+    'Use a brief case study from your experience',
+    'Share the worst advice you ever received',
+    'Describe what changed your perspective recently',
+    'Open with a specific example from this week',
+    'Share an unexpected lesson from a project'
+  ];
+  const allHooks = [...hookExamples, ...personalHooks];
+  const personalStyle = allHooks[Math.floor(Math.random() * allHooks.length)];
+
   const prompt = `Write a professional LinkedIn post as ${identity}.
 
 Topic: ${topic}
-Opening Style: ${randomStyle}
+Opening Style: ${personalStyle}
 
 ⚠️ CRITICAL RULES:
 1. Do NOT use these overused openings:
@@ -280,12 +377,39 @@ const REPLY_IDENTITIES = [
 
 /**
  * 使用 Ollama 生成 LinkedIn 回覆
+ * @param {string} postText - 原貼文內容
+ * @param {string} postAuthor - 原作者
+ * @param {string} persona - Persona 內容
+ * @param {Object|null} brandConfig - 品牌配置（品牌模式時使用）
  */
-async function generateLinkedInReply(postText, postAuthor, persona) {
+async function generateLinkedInReply(postText, postAuthor, persona, brandConfig = null) {
+  // 🏢 品牌模式：使用品牌 prompt 模板
+  if (brandConfig) {
+    console.log(`[INFO] 🏢 Using brand prompt for LinkedIn reply: ${brandConfig.name}`);
+    const brandPrompt = getBrandLinkedInReplyPrompt(brandConfig, postText, postAuthor);
+
+    try {
+      const response = await callOllamaAPI(brandPrompt);
+      const cleanedReply = cleanReplyContent(response);
+
+      // 驗證：檢查是否複製原文
+      if (cleanedReply && isContentDuplicate(cleanedReply, postText)) {
+        console.log('[ERROR] Brand reply duplicates original post content. Rejecting.');
+        return null;
+      }
+
+      return cleanedReply;
+    } catch (error) {
+      console.error('Error generating brand LinkedIn reply:', error.message);
+      return null;
+    }
+  }
+
+  // 👤 個人模式：使用原有 Lman 身份
   // 隨機選擇身份（回覆不需要一直提公司）
   const identity = REPLY_IDENTITIES[Math.floor(Math.random() * REPLY_IDENTITIES.length)];
 
-  // 檢查是否使用動漫類比
+  // 檢查是否使用動漫類比（品牌模式不使用）
   const animeAnalogy = getLinkedInAnimeAnalogy(postText);
 
   let prompt;
@@ -666,6 +790,7 @@ function stripThinkingBlock(content) {
   cleaned = cleaned.trim();
 
   // 18. 🆕 最終驗證：如果還有 meta-instruction 就返回 null (2025-12-14 新增 - 修復 prompt leak)
+  // 🔧 2026-01-08: 同步 linkedin-fact-checker-ollama.js 的修復，增加 content guidelines leak 關鍵詞
   const metaKeywords = [
     'We should produce', 'We must ensure', 'We need to', 'We need a', 'We have many facts',
     'We can say', 'Include metrics', 'fabricated claims', 'verified facts',
@@ -675,7 +800,11 @@ function stripThinkingBlock(content) {
     'impact scope medium', 'Use conservative for uncertain',
     'Core insight:', 'Real examples:', 'Call-to-action:', 'e.g.,', 'e.g.:',
     'Count approximate', "We'll write", "We'll draft", 'We will write', 'We will draft',
-    'Check length:', "Let's draft and count", "We'll approximate"
+    'Check length:', "Let's draft and count", "We'll approximate",
+    // 🆕 2026-01-08: 修復 Apollo LinkedIn Page prompt leak (content guidelines 洩漏)
+    'maybe a question', 'bold statement', 'Also ensure', 'Avoid B2B',
+    'Use 2C perspective', 'Use safe statements', 'ask readers to share',
+    'no mention of companies', 'Use 2C', 'B2B enterprise'
   ];
 
   for (const keyword of metaKeywords) {

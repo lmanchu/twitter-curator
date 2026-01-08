@@ -1304,6 +1304,14 @@ async function main() {
     const persona = fs.readFileSync(config.PERSONA_FILE, 'utf-8');
     log('Persona loaded successfully');
 
+    // 讀取品牌配置（用於品牌帳號 vs 個人帳號模式切換）
+    const brandConfig = config.BRAND_MODE === 'brand' ? config.BRAND_CONFIG : null;
+    if (brandConfig) {
+      log(`🏢 BRAND MODE enabled: ${brandConfig.name} (${brandConfig.handle})`);
+    } else {
+      log('👤 PERSONAL MODE: Using Lman voice');
+    }
+
     log('Launching browser...');
     const userDataDir = path.join(__dirname, 'chrome-user-data-linkedin');
 
@@ -1366,10 +1374,10 @@ async function main() {
             }
           } catch (error) {
             log(`Fact-checker error, falling back to original: ${error.message}`, 'WARN');
-            postText = await generateLinkedInPost(persona, topic);
+            postText = await generateLinkedInPost(persona, topic, brandConfig);
           }
         } else {
-          postText = await generateLinkedInPost(persona, topic);
+          postText = await generateLinkedInPost(persona, topic, brandConfig);
         }
 
         if (postText) {
@@ -1404,7 +1412,7 @@ async function main() {
             log(`\n--- Processing post ${i + 1}/${maxAttempts} from ${post.author} ---`);
             log(`Post: ${post.text.substring(0, 100)}...`);
 
-            const replyText = await generateLinkedInReply(post.text, post.author, persona);
+            const replyText = await generateLinkedInReply(post.text, post.author, persona, brandConfig);
 
             if (replyText) {
               const success = await replyToPost(page, post, replyText);

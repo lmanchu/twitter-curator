@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-01-09
+
+### 🏢 LinkedIn Brand Mode Support
+
+This version extends brand mode support to LinkedIn content generator, preventing personal experiences from leaking into LinkedIn Page posts.
+
+### Added
+- ✅ **Brand prompt templates** in linkedin-content-generator.js:
+  - `getBrandLinkedInPostPrompt()` - brand voice for LinkedIn posts
+  - `getBrandLinkedInReplyPrompt()` - brand voice for LinkedIn replies
+- ✅ **brandConfig parameter** to `generateLinkedInPost()` and `generateLinkedInReply()`
+- ✅ **Automatic mode detection** in linkedin-curator.js with logging
+
+### Changed
+- LinkedIn posts/replies now use brand voice when `BRAND_MODE='brand'`
+- Brand mode prevents personal experiences ("After 8 years...", "I", "my")
+- Uses company perspective ("We at IriXion...", "Our approach...")
+
+### Architecture
+- Same pattern as Twitter brand mode (v2.6.0)
+- `brandConfig` passed through LinkedIn content generation pipeline
+- Personal mode preserved for individual accounts
+
 ## [2.6.0] - 2026-01-09
 
 ### 🏢 Brand Mode Support - Fix Personal Experience Leak

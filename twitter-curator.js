@@ -16,7 +16,9 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
-const config = require('./config');
+const config = process.env.CURATOR_CONFIG
+  ? require(process.env.CURATOR_CONFIG)
+  : require('./config');
 const { generateOriginalTweet, generateReply, generateInterestReply, generateTrackedReply, selectRandomTopic, selectWeightedTopic } = require('./content-generator');
 
 puppeteer.use(StealthPlugin());
@@ -75,7 +77,8 @@ function parseTrackedAccounts() {
 
       // 解析帳號
       if (currentSection === 'twitter') {
-        const username = trimmed.replace(/^@/, '').trim();
+        // 取 # 前面的部分，移除 @ 符號和空白
+        const username = trimmed.split('#')[0].replace(/^@/, '').trim();
         if (username && !username.includes(' ')) {
           twitter.push({
             username,
@@ -84,7 +87,8 @@ function parseTrackedAccounts() {
           });
         }
       } else if (currentSection === 'linkedin') {
-        const username = trimmed.trim();
+        // 取 # 前面的部分，移除空白
+        const username = trimmed.split('#')[0].trim();
         if (username && !username.includes(' ')) {
           linkedin.push({
             username,
@@ -105,10 +109,15 @@ function parseTrackedAccounts() {
 }
 
 function getPriority(category) {
-  if (!category) return 3;
-  if (category.includes('vc') || category.includes('investor')) return 1;
-  if (category.includes('leader') || category.includes('ai')) return 2;
-  if (category.includes('founder')) return 3;
+  if (!category) return 5;
+  // 優先級：Infrastructure > DevOps > AI/ML Engineers > Founders > VCs/低優先
+  // priority 1 = 最高 (weight 4x), priority 5 = 最低 (weight 1x)
+  // ⚠️ 順序很重要：先檢測 "低優先" 再檢測 "ai"，避免 "ai companies (低優先)" 被誤判
+  if (category.includes('低優先') || category.includes('vc') || category.includes('investor')) return 5;
+  if (category.includes('infrastructure') || category.includes('networking')) return 1;
+  if (category.includes('devops') || category.includes('sre')) return 2;
+  if (category.includes('ai') || category.includes('ml') || category.includes('engineer')) return 3;
+  if (category.includes('founder') || category.includes('cloud') || category.includes('platform')) return 4;
   return 4;
 }
 
@@ -238,6 +247,108 @@ function calculateSimilarity(text1, text2) {
 }
 
 // ========================================
+// 帳號切換 (Delegate Mode)
+// ========================================
+
+async function switchToAccount(page, targetHandle, maxRetries = 3) {
+  try {
+    log(`Switching to @${targetHandle}...`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // Check current account
+      const currentHandle = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+        return el ? el.textContent.toLowerCase() : '';
+      });
+
+      if (currentHandle.includes(targetHandle.toLowerCase())) {
+        log(`Already on @${targetHandle} ✓`);
+        return true;
+      }
+
+      if (attempt > 1) {
+        log(`Retry ${attempt}/${maxRetries}: Still on wrong account, retrying switch...`, 'WARN');
+      }
+
+      // Click account switcher
+      const switcher = await page.waitForSelector('[data-testid="SideNav_AccountSwitcher_Button"]', { timeout: 10000 });
+      await switcher.click();
+      await randomDelay(1500, 2500);
+
+      // Find and click the target account
+      const accounts = await page.$$('[data-testid="UserCell"]');
+      let found = false;
+      for (const account of accounts) {
+        const text = await account.evaluate(el => el.textContent);
+        if (text.toLowerCase().includes(targetHandle.toLowerCase())) {
+          log(`Found @${targetHandle}, clicking...`);
+          await account.click();
+          await randomDelay(1500, 2500);
+
+          // Handle delegate account confirmation dialog
+          // Twitter shows "You're about to switch to a delegate account" dialog
+          // The "Switch accounts" button has no testid, find by text
+          try {
+            await randomDelay(1000, 1500);
+            const switchButton = await page.evaluateHandle(() => {
+              const buttons = document.querySelectorAll('button, [role="button"]');
+              for (const btn of buttons) {
+                if (btn.textContent.trim() === 'Switch accounts') {
+                  return btn;
+                }
+              }
+              return null;
+            });
+
+            if (switchButton && switchButton.asElement()) {
+              log('Confirming delegate switch...');
+              await switchButton.asElement().click();
+              await randomDelay(2000, 3000);
+            }
+          } catch (e) {
+            // No confirmation dialog, might be switching to own account
+            log(`No confirmation dialog: ${e.message}`);
+          }
+
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        log(`Account @${targetHandle} not found in switcher`, 'WARN');
+        return false;
+      }
+
+      // Navigate back to home to trigger account context
+      await page.goto('https://twitter.com/home', { waitUntil: 'networkidle2' });
+      await randomDelay(2000, 3000);
+
+      // VERIFY the switch actually worked
+      const verifyHandle = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+        return el ? el.textContent.toLowerCase() : '';
+      });
+
+      if (verifyHandle.includes(targetHandle.toLowerCase())) {
+        log(`Switched to @${targetHandle} ✓ (verified)`);
+        return true;
+      }
+
+      log(`Switch verification failed (got: ${verifyHandle}), will retry...`, 'WARN');
+      await randomDelay(2000, 3000);
+    }
+
+    log(`Failed to switch to @${targetHandle} after ${maxRetries} attempts`, 'ERROR');
+    return false;
+
+  } catch (error) {
+    log(`Switch account error: ${error.message}`, 'ERROR');
+    return false;
+  }
+}
+
+// ========================================
 // Twitter 登入
 // ========================================
 
@@ -255,6 +366,16 @@ async function loginToTwitter(page) {
 
     if (isLoggedIn) {
       log('Already logged in! ✓');
+
+      // Handle delegate mode - switch to target account if configured
+      if (config.DELEGATE_MODE && config.DELEGATE_MODE.enabled) {
+        const switched = await switchToAccount(page, config.DELEGATE_MODE.target_account);
+        if (!switched) {
+          log(`Failed to switch to @${config.DELEGATE_MODE.target_account}`, 'ERROR');
+          return false;
+        }
+      }
+
       return true;
     }
 
@@ -300,6 +421,37 @@ async function postTweet(page, tweetText) {
     await page.goto('https://twitter.com/home', { waitUntil: 'networkidle2' });
     await randomDelay();
 
+    // Verify correct account in delegate mode - MUST succeed before posting
+    if (config.DELEGATE_MODE && config.DELEGATE_MODE.enabled) {
+      const target = config.DELEGATE_MODE.target_account.toLowerCase();
+      const currentHandle = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+        return el ? el.textContent.toLowerCase() : '';
+      });
+
+      if (!currentHandle.includes(target)) {
+        log(`Wrong account detected (${currentHandle}), switching to @${config.DELEGATE_MODE.target_account}...`, 'WARN');
+        const switched = await switchToAccount(page, config.DELEGATE_MODE.target_account);
+        if (!switched) {
+          log(`ABORT: Cannot switch to @${config.DELEGATE_MODE.target_account}, refusing to post to wrong account`, 'ERROR');
+          return false;
+        }
+        await page.goto('https://twitter.com/home', { waitUntil: 'networkidle2' });
+        await randomDelay();
+      }
+
+      // Final verification before typing
+      const finalHandle = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+        return el ? el.textContent.toLowerCase() : '';
+      });
+      if (!finalHandle.includes(target)) {
+        log(`ABORT: Final verification failed (got: ${finalHandle}), refusing to post`, 'ERROR');
+        return false;
+      }
+      log(`Account verified: @${config.DELEGATE_MODE.target_account} ✓`);
+    }
+
     // 找到 tweet 輸入框
     const tweetBox = await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 10000 });
     await tweetBox.click();
@@ -324,7 +476,12 @@ async function postTweet(page, tweetText) {
       let tweetUrl = null;
       try {
         log('Getting tweet URL from profile...');
-        await page.goto('https://twitter.com/lmanchu', { waitUntil: 'networkidle2' });
+        // Use delegate target if configured, otherwise extract from account switcher
+        let profileHandle = 'lmanchu';
+        if (config.DELEGATE_MODE && config.DELEGATE_MODE.enabled) {
+          profileHandle = config.DELEGATE_MODE.target_account;
+        }
+        await page.goto(`https://twitter.com/${profileHandle}`, { waitUntil: 'networkidle2' });
         await randomDelay(2000, 3000);
 
         // 找到第一個推文的連結
@@ -648,25 +805,77 @@ async function replyToTweet(page, tweet, replyText) {
 
     log(`Replying to @${tweet.author}...`);
 
-    // 前往推文頁面
+    // 前往推文頁面 - 使用更穩定的等待策略
     const tweetUrl = `https://twitter.com/i/status/${tweet.tweetId}`;
-    await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
-    await randomDelay();
+
+    // 先確保頁面穩定，避免 frame detached
+    try {
+      await page.goto('about:blank', { waitUntil: 'load', timeout: 5000 });
+    } catch (e) {
+      // 忽略 about:blank 的錯誤
+    }
+
+    await page.goto(tweetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // 額外等待頁面完全渲染
+    await page.waitForSelector('article', { timeout: 10000 }).catch(() => {});
+    await randomDelay(1500, 2500);
+
+    // Verify correct account in delegate mode
+    if (config.DELEGATE_MODE && config.DELEGATE_MODE.enabled) {
+      const currentHandle = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+        return el ? el.textContent.toLowerCase() : '';
+      });
+      const target = config.DELEGATE_MODE.target_account.toLowerCase();
+      if (!currentHandle.includes(target)) {
+        log(`Wrong account detected, re-switching to @${config.DELEGATE_MODE.target_account}...`, 'WARN');
+        await switchToAccount(page, config.DELEGATE_MODE.target_account);
+        await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
+        await randomDelay();
+      }
+    }
 
     // 點擊回覆按鈕
     const replyButton = await page.$('[data-testid="reply"]');
     if (replyButton) {
       await replyButton.click();
-      await randomDelay(1000, 2000);
+      await randomDelay(1500, 2500);  // 稍微增加等待時間
+    } else {
+      log('Reply button not found, trying alternative...', 'WARN');
+      // Fallback: 直接點擊第一個回覆圖標
+      const altReplyButton = await page.$('article [role="button"][aria-label*="Reply"]');
+      if (altReplyButton) {
+        await altReplyButton.click();
+        await randomDelay(1500, 2500);
+      }
     }
 
-    // 輸入回覆
-    const textBox = await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 5000 });
+    // 輸入回覆 - 增加 timeout
+    const textBox = await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 10000 });
     await textBox.type(replyText, { delay: 50 });
     await randomDelay(1000, 2000);
 
-    // 發送
-    const sendButton = await page.$('[data-testid="tweetButton"]');
+    // 發送 - 使用 waitForSelector 而非直接 query，並加入 fallback
+    let sendButton = null;
+    const sendButtonSelectors = [
+      '[data-testid="tweetButton"]',
+      '[data-testid="tweetButtonInline"]',
+      'button[data-testid="tweetButton"]',
+      '[role="button"][data-testid="tweetButton"]'
+    ];
+
+    for (const selector of sendButtonSelectors) {
+      try {
+        sendButton = await page.waitForSelector(selector, { timeout: 3000 });
+        if (sendButton) {
+          log(`Found send button with selector: ${selector}`, 'DEBUG');
+          break;
+        }
+      } catch (e) {
+        // 繼續嘗試下一個 selector
+      }
+    }
+
     if (sendButton) {
       await sendButton.click();
       await randomDelay(3000, 5000);
@@ -715,7 +924,7 @@ async function main() {
 
     // 啟動瀏覽器
     log('Launching browser...');
-    const userDataDir = path.join(__dirname, 'chrome-user-data');
+    const userDataDir = config.USER_DATA_DIR || path.join(__dirname, 'chrome-user-data');
 
     browser = await puppeteer.launch({
       headless: config.HEADLESS,

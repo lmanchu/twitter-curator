@@ -1,6 +1,6 @@
 {
   "name": "twitter-curator",
-  "version": "1.0.0",
+  "version": "2.4.0",
   "description": "Persona-driven Twitter content curation and automation",
   "main": "twitter-curator.js",
   "scripts": {
@@ -24,6 +24,7 @@
     "puppeteer": "^24.27.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "rss-parser": "^3.13.0",
     "ws": "^8.18.3"
   }
 }

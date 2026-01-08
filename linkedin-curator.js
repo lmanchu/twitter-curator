@@ -20,7 +20,9 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
-const config = require('./linkedin-config');
+const config = process.env.CURATOR_CONFIG
+  ? require(process.env.CURATOR_CONFIG)
+  : require('./linkedin-config');
 const { generateLinkedInPost, generateLinkedInReply, selectRandomTopic, selectWeightedTopic } = require('./linkedin-content-generator');
 
 // 載入事實核查系統 (Ollama 版本)
@@ -297,31 +299,70 @@ async function loginToLinkedIn(page) {
 async function postLinkedInPost(page, postText) {
   try {
     if (config.DRY_RUN) {
-      log(`[DRY RUN] Would post: "${postText.substring(0, 100)}..."`, 'INFO');
+      const modeLabel = config.IS_PAGE_MODE ? `[PAGE: ${config.PAGE_NAME}]` : '[PERSONAL]';
+      log(`[DRY RUN] ${modeLabel} Would post: "${postText.substring(0, 100)}..."`, 'INFO');
       return true;
     }
 
     log('Posting to LinkedIn...');
 
-    await page.goto(config.LINKEDIN_URLS.home, {
+    // Page 模式：導航到 Company Page
+    const targetUrl = config.IS_PAGE_MODE && config.PAGE_URL
+      ? config.PAGE_URL
+      : config.LINKEDIN_URLS.home;
+
+    log(`Navigating to: ${targetUrl}${config.IS_PAGE_MODE ? ' (Page Mode)' : ''}`);
+
+    await page.goto(targetUrl, {
       waitUntil: 'domcontentloaded',
       timeout: 60000
     });
     await randomDelay(3000, 5000);
 
-    // 點擊 "Start a post" 按鈕 - 使用通過文字查找的方式更可靠
-    log('Looking for Start a post button...');
-    const startPostButton = await page.evaluateHandle(() => {
-      const buttons = Array.from(document.querySelectorAll('button'));
-      return buttons.find(btn => btn.textContent.trim() === 'Start a post');
-    });
+    // 點擊發文按鈕 - Page mode 需要先點 "Create" 再點 "Start a post"
+    const isPageMode = config.IS_PAGE_MODE;
 
-    if (!startPostButton) {
-      throw new Error('Start a post button not found');
+    if (isPageMode) {
+      // Page mode: Click "Create" first
+      log('Looking for Create button (Page mode)...');
+      const createButtonHandle = await page.evaluateHandle(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        return buttons.find(btn => btn.textContent.trim() === 'Create');
+      });
+      const createButton = createButtonHandle.asElement();
+      if (!createButton) {
+        throw new Error('Create button not found');
+      }
+      await createButton.click();
+      log('Clicked Create button');
+      await randomDelay(1500, 2500);
+
+      // Then click "Start a post" from dropdown
+      log('Looking for Start a post in dropdown...');
+      const startPostHandle = await page.evaluateHandle(() => {
+        const items = Array.from(document.querySelectorAll('li'));
+        return items.find(item => item.textContent.trim().startsWith('Start a post'));
+      });
+      const startPostItem = startPostHandle.asElement();
+      if (!startPostItem) {
+        throw new Error('Start a post menu item not found');
+      }
+      await startPostItem.click();
+      log('Clicked Start a post');
+    } else {
+      // Personal account: Click "Start a post" directly
+      log('Looking for Start a post button...');
+      const startPostButtonHandle = await page.evaluateHandle(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        return buttons.find(btn => btn.textContent.trim() === 'Start a post');
+      });
+      const startPostButton = startPostButtonHandle.asElement();
+      if (!startPostButton) {
+        throw new Error('Start a post button not found');
+      }
+      await startPostButton.click();
+      log('Clicked Start a post button');
     }
-
-    await startPostButton.click();
-    log('Clicked Start a post button');
     await randomDelay(2000, 3000);
 
     // 輸入貼文內容
@@ -673,13 +714,217 @@ function filterPostsForReply(posts) {
 }
 
 // ========================================
+// Helper: 輸入留言並提交
+// ========================================
+
+async function typeAndSubmitComment(page, replyText, elementIndex) {
+  try {
+    // 檢查是否有「僅限連結才能留言」的限制
+    const connectionOnlyMessage = await page.$('text/Only connections can comment');
+    if (connectionOnlyMessage) {
+      log('⚠️ Post restricted to connections only, skipping...', 'WARN');
+      return false;
+    }
+
+    // 找留言框 - 使用多個選擇器和等待
+    let commentBox = null;
+    const commentBoxSelectors = [
+      '.ql-editor[contenteditable="true"]',
+      'div[role="textbox"][contenteditable="true"]',
+      '[data-placeholder*="Add a comment"]',
+      '.comments-comment-box__form-container [contenteditable="true"]',
+      '.comments-comment-texteditor [contenteditable="true"]',
+      '.editor-content[contenteditable="true"]',
+      'div.ql-editor[data-placeholder]',
+      '.comments-comment-box [contenteditable="true"]',
+      '[class*="comment"] [contenteditable="true"]',
+      '[aria-label*="comment" i] [contenteditable="true"]',
+      'form[class*="comment"] [contenteditable="true"]'
+    ];
+
+    // 先等待一段時間讓 UI 完全載入
+    log('Waiting for comment box to appear...');
+    await randomDelay(1500, 2000);
+
+    // 嘗試等待留言框出現
+    for (const selector of commentBoxSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 3000, visible: true });
+        commentBox = await page.$(selector);
+        if (commentBox) {
+          log(`✓ Comment box found with selector: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // 繼續嘗試下一個選擇器
+      }
+    }
+
+    // 如果還找不到，嘗試用 evaluate 找任何可編輯區域
+    if (!commentBox) {
+      log('Trying to find comment box via evaluate...');
+      const handle = await page.evaluateHandle(() => {
+        const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
+        const visible = editables.filter(el => {
+          const rect = el.getBoundingClientRect();
+          const style = window.getComputedStyle(el);
+          return rect.width > 0 && rect.height > 0 &&
+                 style.display !== 'none' && style.visibility !== 'hidden';
+        });
+        if (visible.length > 0) {
+          return visible[visible.length - 1];
+        }
+        return null;
+      });
+
+      const isValid = await handle.evaluate(el => el !== null);
+      if (handle && isValid) {
+        commentBox = handle;
+        log('✓ Comment box found via evaluate (last visible contenteditable)');
+      }
+    }
+
+    if (!commentBox) {
+      const screenshotPath = `/Users/lman/twitter-curator/debug-no-commentbox-${Date.now()}.png`;
+      await page.screenshot({ path: screenshotPath });
+      log(`Screenshot saved: ${screenshotPath}`, 'DEBUG');
+      log('Comment box not found after clicking', 'WARN');
+      return false;
+    }
+
+    // 輸入留言
+    await commentBox.click();
+    await randomDelay(500, 1000);
+    await page.keyboard.type(replyText, { delay: 30 });
+    log(`✓ Reply typed (${replyText.length} characters)`);
+    await randomDelay(1000, 2000);
+
+    // 找提交按鈕
+    log('Looking for Post/Submit button...');
+    let submitBtn = null;
+
+    const submitButtonSelectors = [
+      'button.comments-comment-box__submit-button',
+      'button.comments-comment-box__submit-button--cr',
+      'form.comments-comment-box__form button[type="submit"]',
+      'button.artdeco-button--primary[type="submit"]',
+      'button[aria-label*="Post"]',
+      'button[class*="comment"][class*="submit"]',
+      '.comments-comment-box button.artdeco-button--primary',
+      'button.comments-comment-box-comment__submit-button'
+    ];
+
+    await randomDelay(500, 1000);
+
+    for (const selector of submitButtonSelectors) {
+      try {
+        submitBtn = await page.$(selector);
+        if (submitBtn) {
+          const isVisible = await submitBtn.evaluate(el => {
+            const rect = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 &&
+                   style.display !== 'none' && style.visibility !== 'hidden';
+          });
+
+          if (isVisible) {
+            log(`✓ Submit button found with selector: ${selector}`);
+            break;
+          }
+          submitBtn = null;
+        }
+      } catch (e) {
+        // 繼續嘗試下一個
+      }
+    }
+
+    // 如果還找不到，用 evaluate 尋找包含 "Post" 文字的按鈕
+    if (!submitBtn) {
+      log('Trying to find Post button by text...');
+      const buttonHandle = await page.evaluateHandle(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const commentArea = document.querySelector('.comments-comment-box, form.comments-comment-box__form');
+        if (commentArea) {
+          const btnsInCommentArea = Array.from(commentArea.querySelectorAll('button'));
+          return btnsInCommentArea.find(btn =>
+            btn.textContent.trim().toLowerCase() === 'post' ||
+            btn.getAttribute('aria-label')?.toLowerCase().includes('post')
+          );
+        }
+        return buttons.find(btn =>
+          (btn.textContent.trim().toLowerCase() === 'post' ||
+           btn.getAttribute('aria-label')?.toLowerCase().includes('post')) &&
+          btn.getBoundingClientRect().width > 0
+        );
+      });
+
+      const isValid = await buttonHandle.evaluate(el => el !== null);
+      if (buttonHandle && isValid) {
+        submitBtn = buttonHandle;
+        log('✓ Post button found via text search');
+      }
+    }
+
+    if (submitBtn) {
+      await submitBtn.click();
+      log('✓ Reply submitted via Post button');
+      await randomDelay(4000, 6000);
+      return true;
+    } else {
+      log('❌ Post button not found, cannot submit reply', 'ERROR');
+      const screenshotPath = `/Users/lman/twitter-curator/debug-no-postbutton-${Date.now()}.png`;
+      await page.screenshot({ path: screenshotPath });
+      log(`Screenshot saved: ${screenshotPath}`, 'DEBUG');
+      return false;
+    }
+
+  } catch (error) {
+    log(`Error in typeAndSubmitComment: ${error.message}`, 'ERROR');
+    return false;
+  }
+}
+
+// ========================================
 // 在當前頁面直接回覆（不導航離開）
 // ========================================
 
 async function replyOnCurrentPage(page, elementIndex, replyText) {
   try {
-    // 找到對應的貼文元素
-    const postElements = await page.$$('[class*="feed-shared-update-v2"]');
+    // 找到對應的貼文元素 - 嘗試多個 selectors
+    const postSelectors = [
+      '[class*="feed-shared-update-v2"]',
+      '[data-urn*="urn:li:activity"]',
+      '.scaffold-finite-scroll__content > div',
+      'article[data-id]',
+      '.search-results-container li',
+      '[class*="occludable-update"]'
+    ];
+
+    let postElements = [];
+    for (const selector of postSelectors) {
+      postElements = await page.$$(selector);
+      if (postElements.length > 0) {
+        log(`Found ${postElements.length} posts with selector: ${selector}`, 'DEBUG');
+        break;
+      }
+    }
+
+    // 如果還是找不到 post elements，嘗試直接用 Comment buttons
+    if (postElements.length === 0) {
+      log('No post elements found, trying direct Comment button approach...', 'WARN');
+      const commentBtns = await page.$$('button[aria-label*="Comment"], button[aria-label*="comment"]');
+      if (commentBtns.length > elementIndex) {
+        log(`Found ${commentBtns.length} comment buttons, clicking index ${elementIndex}`);
+        await commentBtns[elementIndex].scrollIntoView();
+        await randomDelay(1000, 1500);
+        await commentBtns[elementIndex].click();
+        await randomDelay(2000, 3000);
+        // 跳到輸入留言的部分（行 795 之後）
+        return await typeAndSubmitComment(page, replyText, elementIndex);
+      }
+      log(`Element index ${elementIndex} out of range (0 post elements, ${commentBtns.length} comment buttons)`, 'WARN');
+      return false;
+    }
 
     if (elementIndex >= postElements.length) {
       log(`Element index ${elementIndex} out of range (${postElements.length} elements)`, 'WARN');
@@ -744,176 +989,8 @@ async function replyOnCurrentPage(page, elementIndex, replyText) {
     await postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await randomDelay(2000, 3000);
 
-    // 檢查是否有「僅限連結才能留言」的限制
-    const connectionOnlyMessage = await page.$('text/Only connections can comment');
-    if (connectionOnlyMessage) {
-      log('⚠️ Post restricted to connections only, skipping...', 'WARN');
-      return false;
-    }
-
-    // 找留言框 - 使用多個選擇器和等待
-    let commentBox = null;
-    const commentBoxSelectors = [
-      // LinkedIn 2024-2025 常見選擇器
-      '.ql-editor[contenteditable="true"]',
-      'div[role="textbox"][contenteditable="true"]',
-      '[data-placeholder*="Add a comment"]',
-      '.comments-comment-box__form-container [contenteditable="true"]',
-      '.comments-comment-texteditor [contenteditable="true"]',
-      '.editor-content[contenteditable="true"]',
-      'div.ql-editor[data-placeholder]',
-      // 新增：更多 LinkedIn 變體
-      '.comments-comment-box [contenteditable="true"]',
-      '[class*="comment"] [contenteditable="true"]',
-      '[aria-label*="comment" i] [contenteditable="true"]',
-      'form[class*="comment"] [contenteditable="true"]'
-    ];
-
-    // 先等待一段時間讓 UI 完全載入
-    log('Waiting for comment box to appear...');
-    await randomDelay(1500, 2000);
-
-    // 嘗試等待留言框出現
-    for (const selector of commentBoxSelectors) {
-      try {
-        await page.waitForSelector(selector, { timeout: 3000, visible: true });
-        commentBox = await page.$(selector);
-        if (commentBox) {
-          log(`✓ Comment box found with selector: ${selector}`);
-          break;
-        }
-      } catch (e) {
-        // 繼續嘗試下一個選擇器
-      }
-    }
-
-    // 如果還找不到，嘗試用 evaluate 找任何可編輯區域
-    if (!commentBox) {
-      log('Trying to find comment box via evaluate...');
-      const handle = await page.evaluateHandle(() => {
-        // 找所有 contenteditable 元素
-        const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
-        // 過濾掉隱藏的和 post 編輯器（只要 comment 相關的）
-        const visible = editables.filter(el => {
-          const rect = el.getBoundingClientRect();
-          const style = window.getComputedStyle(el);
-          return rect.width > 0 && rect.height > 0 &&
-                 style.display !== 'none' && style.visibility !== 'hidden';
-        });
-        // 返回最下面的那個（通常是最近打開的 comment box）
-        if (visible.length > 0) {
-          return visible[visible.length - 1];
-        }
-        return null;
-      });
-
-      const isValid = await handle.evaluate(el => el !== null);
-      if (handle && isValid) {
-        commentBox = handle;
-        log('✓ Comment box found via evaluate (last visible contenteditable)');
-      }
-    }
-
-    if (!commentBox) {
-      // 截圖以便調試
-      const screenshotPath = `/Users/lman/twitter-curator/debug-no-commentbox-${Date.now()}.png`;
-      await page.screenshot({ path: screenshotPath });
-      log(`Screenshot saved: ${screenshotPath}`, 'DEBUG');
-      log('Comment box not found after clicking', 'WARN');
-      return false;
-    }
-
-    // 輸入留言
-    await commentBox.click();
-    await randomDelay(500, 1000);
-    await page.keyboard.type(replyText, { delay: 30 });
-    log(`✓ Reply typed (${replyText.length} characters)`);
-    await randomDelay(1000, 2000);
-
-    // 找提交按鈕 - 使用多個選擇器和策略
-    log('Looking for Post/Submit button...');
-    let submitBtn = null;
-
-    const submitButtonSelectors = [
-      'button.comments-comment-box__submit-button',
-      'button.comments-comment-box__submit-button--cr',
-      'form.comments-comment-box__form button[type="submit"]',
-      'button.artdeco-button--primary[type="submit"]',
-      'button[aria-label*="Post"]',
-      'button[class*="comment"][class*="submit"]',
-      '.comments-comment-box button.artdeco-button--primary',
-      'button.comments-comment-box-comment__submit-button'
-    ];
-
-    // 等待一下讓按鈕出現（在輸入文字後）
-    await randomDelay(500, 1000);
-
-    // 嘗試每個選擇器
-    for (const selector of submitButtonSelectors) {
-      try {
-        submitBtn = await page.$(selector);
-        if (submitBtn) {
-          // 確認按鈕是可見且可點擊的
-          const isVisible = await submitBtn.evaluate(el => {
-            const rect = el.getBoundingClientRect();
-            const style = window.getComputedStyle(el);
-            return rect.width > 0 && rect.height > 0 &&
-                   style.display !== 'none' && style.visibility !== 'hidden';
-          });
-
-          if (isVisible) {
-            log(`✓ Submit button found with selector: ${selector}`);
-            break;
-          }
-          submitBtn = null;
-        }
-      } catch (e) {
-        // 繼續嘗試下一個
-      }
-    }
-
-    // 如果還找不到，用 evaluate 尋找包含 "Post" 文字的按鈕
-    if (!submitBtn) {
-      log('Trying to find Post button by text...');
-      const buttonHandle = await page.evaluateHandle(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        // 找最近的留言區域內的 Post 按鈕
-        const commentArea = document.querySelector('.comments-comment-box, form.comments-comment-box__form');
-        if (commentArea) {
-          const btnsInCommentArea = Array.from(commentArea.querySelectorAll('button'));
-          return btnsInCommentArea.find(btn =>
-            btn.textContent.trim().toLowerCase() === 'post' ||
-            btn.getAttribute('aria-label')?.toLowerCase().includes('post')
-          );
-        }
-        // Fallback: 全域搜尋
-        return buttons.find(btn =>
-          (btn.textContent.trim().toLowerCase() === 'post' ||
-           btn.getAttribute('aria-label')?.toLowerCase().includes('post')) &&
-          btn.getBoundingClientRect().width > 0
-        );
-      });
-
-      const isValid = await buttonHandle.evaluate(el => el !== null);
-      if (buttonHandle && isValid) {
-        submitBtn = buttonHandle;
-        log('✓ Post button found via text search');
-      }
-    }
-
-    if (submitBtn) {
-      await submitBtn.click();
-      log('✓ Reply submitted via Post button');
-      await randomDelay(4000, 6000);
-      return true;
-    } else {
-      log('❌ Post button not found, cannot submit reply', 'ERROR');
-      // 截圖以便調試
-      const screenshotPath = `/Users/lman/twitter-curator/debug-no-postbutton-${Date.now()}.png`;
-      await page.screenshot({ path: screenshotPath });
-      log(`Screenshot saved: ${screenshotPath}`, 'DEBUG');
-      return false;
-    }
+    // 使用 helper function 輸入留言並提交
+    return await typeAndSubmitComment(page, replyText, elementIndex);
 
   } catch (error) {
     log(`Error replying on current page: ${error.message}`, 'ERROR');

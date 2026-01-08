@@ -1,6 +1,6 @@
 {
   "name": "twitter-curator",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Persona-driven Twitter content curation and automation",
   "main": "twitter-curator.js",
   "scripts": {

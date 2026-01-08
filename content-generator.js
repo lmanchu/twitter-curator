@@ -11,6 +11,99 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const localTracker = require('../bin/local-model-token-tracker.js');
 
+// ========================================
+// 🔄 重複內容檢測
+// ========================================
+
+/**
+ * 計算兩個字串的相似度 (Jaccard similarity on words)
+ */
+function calculateSimilarity(str1, str2) {
+  if (!str1 || !str2) return 0;
+
+  const words1 = new Set(str1.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  const words2 = new Set(str2.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+
+  const intersection = new Set([...words1].filter(x => words2.has(x)));
+  const union = new Set([...words1, ...words2]);
+
+  return union.size > 0 ? intersection.size / union.size : 0;
+}
+
+/**
+ * 載入最近發文記錄
+ */
+function loadRecentPosts(postsFile, limit = 30) {
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(postsFile)) return [];
+
+    const data = JSON.parse(fs.readFileSync(postsFile, 'utf-8'));
+    // 取最近 N 篇
+    return data.slice(-limit).map(p => p.text).filter(Boolean);
+  } catch (error) {
+    console.warn('[WARN] Failed to load recent posts:', error.message);
+    return [];
+  }
+}
+
+/**
+ * 檢查內容是否與最近發文重複
+ * @param {string} newContent - 新生成的內容
+ * @param {string[]} recentPosts - 最近發文列表
+ * @param {number} threshold - 相似度閾值 (0-1, 預設 0.6)
+ * @returns {boolean} true 如果重複
+ */
+function isContentDuplicate(newContent, recentPosts, threshold = 0.6) {
+  for (const post of recentPosts) {
+    const similarity = calculateSimilarity(newContent, post);
+    if (similarity >= threshold) {
+      console.log(`[DUPLICATE] Content too similar (${(similarity * 100).toFixed(1)}%) to: "${post.substring(0, 50)}..."`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 載入知識庫目錄中的所有 .md 檔案
+ * @param {string} knowledgeBasePath - 知識庫目錄路徑
+ * @returns {string} 合併後的知識庫內容
+ */
+function loadKnowledgeBase(knowledgeBasePath) {
+  if (!knowledgeBasePath || !fs.existsSync(knowledgeBasePath)) {
+    return '';
+  }
+
+  try {
+    const files = fs.readdirSync(knowledgeBasePath)
+      .filter(f => f.endsWith('.md'))
+      .sort(); // 按字母順序排序以確保一致性
+
+    if (files.length === 0) {
+      console.log('[INFO] Knowledge base directory empty');
+      return '';
+    }
+
+    const contents = files.map(file => {
+      const filePath = require('path').join(knowledgeBasePath, file);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      // 移除 TODO 標記的未完成項目
+      const cleanedContent = content
+        .split('\n')
+        .filter(line => !line.includes('<!-- TODO') && !line.includes('- [ ]'))
+        .join('\n');
+      return `### ${file.replace('.md', '')}\n${cleanedContent}`;
+    });
+
+    console.log(`[INFO] Loaded knowledge base: ${files.length} files from ${knowledgeBasePath}`);
+    return '\n\n## Knowledge Base (Source of Truth)\n' + contents.join('\n\n');
+  } catch (error) {
+    console.warn('[WARN] Failed to load knowledge base:', error.message);
+    return '';
+  }
+}
+
 /**
  * 從 Persona 提取關鍵信息
  */
@@ -58,6 +151,7 @@ async function generateOriginalTweet(persona, topic, apiKey) {
   const randomHook = hooks[Math.floor(Math.random() * hooks.length)];
 
   // 從 204 篇文章分析得出的寫作風格指導
+  // ⚠️ 不再使用固定例句，避免 AI 直接複製導致重複
   const styleGuide = `
 Lman's Voice (based on 204 Medium articles, 2015-2025):
 - Direct, no-nonsense communication
@@ -67,10 +161,14 @@ Lman's Voice (based on 204 Medium articles, 2015-2025):
 - Connect technology with business value
 - Pragmatic + idealistic mindset
 
-Example phrases:
-- "Blockchain solves trust problems, not technical problems"
-- "Innovation's biggest enemy isn't failure, it's organizational inertia"
-- "AI landing isn't about computing power, it's about scenario understanding"
+Writing patterns to use:
+- Contrast pattern: "Everyone thinks X, but actually Y"
+- Insight pattern: "The real problem isn't X, it's Y"
+- Experience pattern: "After N years of building..."
+- Question pattern: "Have you ever wondered why..."
+
+IMPORTANT: Generate ORIGINAL content. Never copy example phrases verbatim.
+Each tweet must be unique and fresh.
 `;
 
   const prompt = `Write a tweet as Lman (Tech Entrepreneur, Blockchain & AI Thought Leader, IrisGo.AI CoFounder).
@@ -91,13 +189,41 @@ Requirements:
 
 Output ONLY the tweet text, nothing else:`;
 
-  try {
-    const response = await callGeminiAPI(prompt, apiKey);
-    return cleanContent(response);
-  } catch (error) {
-    console.error('Error generating tweet:', error.message);
-    return null;
+  // 載入最近發文，用於重複檢測
+  const config = require('./config');
+  const recentPosts = loadRecentPosts(config.PATHS.posted_tweets, 30);
+
+  // 最多重試 3 次，直到生成不重複的內容
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await callGeminiAPI(prompt, apiKey);
+      const cleaned = cleanContent(response);
+
+      if (!cleaned) {
+        console.log(`[WARN] Attempt ${attempt}: Generated content invalid, retrying...`);
+        continue;
+      }
+
+      // 檢查是否與最近發文重複
+      if (isContentDuplicate(cleaned, recentPosts, 0.6)) {
+        console.log(`[WARN] Attempt ${attempt}: Content duplicate detected, regenerating...`);
+        continue;
+      }
+
+      console.log(`[SUCCESS] Unique content generated on attempt ${attempt}`);
+      return cleaned;
+
+    } catch (error) {
+      console.error(`[ERROR] Attempt ${attempt} failed:`, error.message);
+      if (attempt === MAX_RETRIES) {
+        return null;
+      }
+    }
   }
+
+  console.log('[ERROR] All retry attempts failed to generate unique content');
+  return null;
 }
 
 /**
@@ -752,7 +878,13 @@ module.exports = {
   selectEngagementHook,
   getHookGuidance,
   extractPersonaSummary,
-  isInappropriateContent
+  isInappropriateContent,
+  // 重複檢測相關
+  calculateSimilarity,
+  loadRecentPosts,
+  isContentDuplicate,
+  // 知識庫載入
+  loadKnowledgeBase
 };
 
 // CLI 測試

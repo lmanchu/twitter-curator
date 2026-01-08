@@ -19,7 +19,7 @@ const path = require('path');
 const config = process.env.CURATOR_CONFIG
   ? require(process.env.CURATOR_CONFIG)
   : require('./config');
-const { generateOriginalTweet, generateReply, generateInterestReply, generateTrackedReply, selectRandomTopic, selectWeightedTopic } = require('./content-generator');
+const { generateOriginalTweet, generateReply, generateInterestReply, generateTrackedReply, selectRandomTopic, selectWeightedTopic, loadKnowledgeBase } = require('./content-generator');
 
 puppeteer.use(StealthPlugin());
 
@@ -919,8 +919,17 @@ async function main() {
 
   try {
     // 載入 Persona
-    const persona = fs.readFileSync(config.PERSONA_FILE, 'utf-8');
+    let persona = fs.readFileSync(config.PERSONA_FILE, 'utf-8');
     log('Persona loaded successfully');
+
+    // 載入知識庫（如果有配置）
+    if (config.PATHS?.knowledge_base) {
+      const knowledgeContent = loadKnowledgeBase(config.PATHS.knowledge_base);
+      if (knowledgeContent) {
+        persona += knowledgeContent;
+        log('Knowledge base loaded and appended to persona');
+      }
+    }
 
     // 啟動瀏覽器
     log('Launching browser...');

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-01-09
+
+### 📚 Knowledge Base Integration for Apollo
+
+This version adds knowledge base support for brand accounts, ensuring consistent and accurate messaging.
+
+### Added
+- ✅ **`loadKnowledgeBase()` function** in content-generator.js - loads all .md files from a directory
+- ✅ **Knowledge base path config** - `config.PATHS.knowledge_base` for brand-specific knowledge
+- ✅ **Automatic knowledge injection** - appends knowledge base content to persona at startup
+
+### Architecture
+- Knowledge base files stored in `~/Dropbox/PKM-Vault/1-Projects/IrisGo/Apollo/knowledge-base/core/`
+- Team can collaborate via Tandem sync
+- Files: `approved-claims.md`, `product-overview.md`, `pricing.md`, `faqs.md`
+- TODO markers and incomplete items automatically filtered out
+
 ## [2.4.0] - 2026-01-09
 
 ### 🐛 Reply Selector Reliability Fixes

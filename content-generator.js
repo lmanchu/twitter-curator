@@ -133,26 +133,156 @@ function extractPersonaSummary(personaContent) {
   return keySection.join('\n').substring(0, 2000);
 }
 
+// ========================================
+// 🏢 品牌模式 Prompt 模板
+// ========================================
+
+/**
+ * 獲取品牌模式的原創推文 prompt
+ * @param {Object} brandConfig - 品牌配置
+ * @param {string} topic - 主題
+ * @returns {string} prompt
+ */
+function getBrandTweetPrompt(brandConfig, topic) {
+  return `Write a tweet as the ${brandConfig.name} brand voice (${brandConfig.handle}).
+
+Brand Identity:
+- ${brandConfig.tagline}
+- Core belief: ${brandConfig.voice}
+- Perspective: Company/brand voice (use "we" or "${brandConfig.name}", NOT "I")
+
+CRITICAL RULES:
+- NEVER use first-person singular ("I", "my", "me")
+- NEVER reference personal experience ("After N years...", "In my career...")
+- NEVER mention founder's background or personal journey
+- Use brand perspective: "We at ${brandConfig.name}...", "${brandConfig.name} believes...", "Our approach..."
+
+Writing Style:
+- Thoughtful and professional
+- Challenge mainstream views on AI privacy
+- Focus on product philosophy and user value
+- Direct, no corporate jargon
+
+Topic: ${topic}
+
+Requirements:
+- Max 280 characters
+- Write in English only (no translation needed)
+- NO hashtags, NO emojis
+- Add genuine insight or perspective
+
+Output ONLY the tweet text:`;
+}
+
+/**
+ * 獲取品牌模式的回覆 prompt
+ * @param {Object} brandConfig - 品牌配置
+ * @param {string} tweetText - 原推文
+ * @param {string} tweetAuthor - 原作者
+ * @param {string} hookGuidance - engagement hook 指導
+ * @param {string} avoidGuidance - 避免的模式
+ * @returns {string} prompt
+ */
+function getBrandReplyPrompt(brandConfig, tweetText, tweetAuthor, hookGuidance, avoidGuidance) {
+  return `You are the ${brandConfig.name} brand voice (${brandConfig.handle}). Write a reply to this tweet.
+
+Tweet from @${tweetAuthor}: "${tweetText}"
+
+Brand Identity:
+- ${brandConfig.tagline}
+- Core belief: ${brandConfig.voice}
+
+CRITICAL RULES:
+- NEVER use first-person singular ("I", "my", "me")
+- NEVER reference personal experience or years of experience
+- Use brand perspective: "We...", "${brandConfig.name}...", "Our..."
+- Focus on product philosophy, not personal stories
+
+${hookGuidance ? `Engagement Strategy:\n${hookGuidance}\n` : ''}
+Instructions:
+- Max 280 characters
+- Write in English only
+- Add value with brand perspective on AI/privacy/productivity
+- Be professional but engaging
+- DO NOT paraphrase or repeat the original tweet
+${avoidGuidance}
+
+Reply:`;
+}
+
+/**
+ * 獲取品牌模式的追蹤帳號回覆 prompt
+ * @param {Object} brandConfig - 品牌配置
+ * @param {string} tweetText - 原推文
+ * @param {string} tweetAuthor - 原作者
+ * @param {string} categoryGuidance - 類別指導
+ * @param {string} avoidList - 避免列表
+ * @param {string} includeList - 包含列表
+ * @returns {string} prompt
+ */
+function getBrandTrackedReplyPrompt(brandConfig, tweetText, tweetAuthor, categoryGuidance, avoidList, includeList) {
+  return `You are the ${brandConfig.name} brand voice (${brandConfig.handle}), representing an on-device AI assistant company. Write a strategic reply to this influential person's tweet.
+
+Tweet from @${tweetAuthor}: "${tweetText}"
+
+Brand Identity:
+- ${brandConfig.tagline}
+- Core belief: ${brandConfig.voice}
+
+CRITICAL RULES:
+- NEVER use first-person singular ("I", "my", "me")
+- NEVER reference personal experience or founder background
+- Use brand perspective: "We...", "${brandConfig.name}...", "Our approach..."
+- Represent the company, not an individual
+
+Goal: Get noticed through a thoughtful, valuable brand reply.
+${categoryGuidance}
+
+Instructions:
+- Max 280 characters
+- Write in English only
+- Add genuine value from ${brandConfig.name}'s perspective on AI/privacy
+- Be professional but not sycophantic
+- Ask a thought-provoking question OR share a contrarian insight
+- Your reply must add NEW perspective
+- Avoid: ${avoidList || 'flattery, self-promotion, generic praise'}
+- Include: ${includeList || 'unique perspective, brand values'}
+
+Reply:`;
+}
+
 /**
  * 使用 Ollama 生成原創推文
+ * @param {string} persona - Persona 內容
+ * @param {string} topic - 主題
+ * @param {string} apiKey - API Key
+ * @param {Object} brandConfig - 品牌配置 (可選，null = 個人模式)
  */
-async function generateOriginalTweet(persona, topic, apiKey) {
-  const personaSummary = extractPersonaSummary(persona);
+async function generateOriginalTweet(persona, topic, apiKey, brandConfig = null) {
+  let prompt;
 
-  // 從 Medium 寫作風格分析中提取的推文 hooks
-  const hooks = [
-    'Have you ever wondered...',
-    'Everyone says X, but actually...',
-    'From what I\'ve observed over the years...',
-    'What we\'ll see next is...',
-    'The real question is...',
-    'Here\'s what most people miss...'
-  ];
-  const randomHook = hooks[Math.floor(Math.random() * hooks.length)];
+  // 🏢 品牌模式：使用品牌 prompt
+  if (brandConfig && brandConfig.name) {
+    console.log(`[INFO] Using BRAND mode for ${brandConfig.name}`);
+    prompt = getBrandTweetPrompt(brandConfig, topic);
+  } else {
+    // 👤 個人模式：使用 Lman prompt (原有邏輯)
+    console.log('[INFO] Using PERSONAL mode (Lman)');
+    const personaSummary = extractPersonaSummary(persona);
 
-  // 從 204 篇文章分析得出的寫作風格指導
-  // ⚠️ 不再使用固定例句，避免 AI 直接複製導致重複
-  const styleGuide = `
+    // 從 Medium 寫作風格分析中提取的推文 hooks
+    const hooks = [
+      'Have you ever wondered...',
+      'Everyone says X, but actually...',
+      'From what I\'ve observed over the years...',
+      'What we\'ll see next is...',
+      'The real question is...',
+      'Here\'s what most people miss...'
+    ];
+    const randomHook = hooks[Math.floor(Math.random() * hooks.length)];
+
+    // 從 204 篇文章分析得出的寫作風格指導
+    const styleGuide = `
 Lman's Voice (based on 204 Medium articles, 2015-2025):
 - Direct, no-nonsense communication
 - Focus on practical insights over theory
@@ -171,7 +301,7 @@ IMPORTANT: Generate ORIGINAL content. Never copy example phrases verbatim.
 Each tweet must be unique and fresh.
 `;
 
-  const prompt = `Write a tweet as Lman (Tech Entrepreneur, Blockchain & AI Thought Leader, IrisGo.AI CoFounder).
+    prompt = `Write a tweet as Lman (Tech Entrepreneur, Blockchain & AI Thought Leader, IrisGo.AI CoFounder).
 
 ${styleGuide}
 
@@ -188,6 +318,7 @@ Requirements:
 - Share actionable perspective
 
 Output ONLY the tweet text, nothing else:`;
+  }
 
   // 載入最近發文，用於重複檢測
   const config = require('./config');
@@ -287,8 +418,14 @@ function getHookGuidance(hookPattern) {
 /**
  * 使用 Ollama 生成推文回覆
  * 整合 Heavy Ranker 優化的 Engagement Hook 策略
+ * @param {string} tweetText - 原推文
+ * @param {string} tweetAuthor - 原作者
+ * @param {string} persona - Persona 內容
+ * @param {string} apiKey - API Key
+ * @param {Object} engagementHooks - engagement hook 配置
+ * @param {Object} brandConfig - 品牌配置 (可選，null = 個人模式)
  */
-async function generateReply(tweetText, tweetAuthor, persona, apiKey, engagementHooks = null) {
+async function generateReply(tweetText, tweetAuthor, persona, apiKey, engagementHooks = null, brandConfig = null) {
   // 先檢查原推文是否為不當內容
   if (isInappropriateContent(tweetText)) {
     console.log(`[SKIP] Skipping reply to inappropriate content from @${tweetAuthor}`);
@@ -311,7 +448,16 @@ async function generateReply(tweetText, tweetAuthor, persona, apiKey, engagement
     ? `\nAvoid these low-value patterns:\n- ${avoidPatterns.map(p => p.replace(/_/g, ' ')).join('\n- ')}`
     : '';
 
-  const prompt = `You are Lman, a tech entrepreneur and AI expert. Write a reply to this tweet.
+  let prompt;
+
+  // 🏢 品牌模式：使用品牌 prompt
+  if (brandConfig && brandConfig.name) {
+    console.log(`[INFO] Using BRAND mode for reply (${brandConfig.name})`);
+    prompt = getBrandReplyPrompt(brandConfig, tweetText, tweetAuthor, hookGuidance, avoidGuidance);
+  } else {
+    // 👤 個人模式：使用 Lman prompt (原有邏輯)
+    console.log('[INFO] Using PERSONAL mode for reply (Lman)');
+    prompt = `You are Lman, a tech entrepreneur and AI expert. Write a reply to this tweet.
 
 Tweet from @${tweetAuthor}: "${tweetText}"
 
@@ -331,6 +477,7 @@ Instructions:
 ${avoidGuidance}
 
 Reply:`;
+  }
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);
@@ -482,8 +629,15 @@ Reply:`;
 /**
  * 使用 Ollama 生成針對追蹤帳號的專業回覆
  * 用於回覆 VCs、意見領袖等你想讓他們注意到你的人
+ * @param {string} tweetText - 原推文
+ * @param {string} tweetAuthor - 原作者
+ * @param {string} persona - Persona 內容
+ * @param {string} apiKey - API Key
+ * @param {Object} trackedConfig - 追蹤帳號配置
+ * @param {string} category - 帳號類別
+ * @param {Object} brandConfig - 品牌配置 (可選，null = 個人模式)
  */
-async function generateTrackedReply(tweetText, tweetAuthor, persona, apiKey, trackedConfig, category) {
+async function generateTrackedReply(tweetText, tweetAuthor, persona, apiKey, trackedConfig, category, brandConfig = null) {
   // 先檢查原推文是否為不當內容
   if (isInappropriateContent(tweetText)) {
     console.log(`[SKIP] Skipping reply to inappropriate content from @${tweetAuthor}`);
@@ -513,7 +667,16 @@ async function generateTrackedReply(tweetText, tweetAuthor, persona, apiKey, tra
 - Build genuine connection`;
   }
 
-  const prompt = `You are Lman, CoFounder of IrisGo.AI (on-device AI assistant). Write a strategic reply to this influential person's tweet.
+  let prompt;
+
+  // 🏢 品牌模式：使用品牌 prompt
+  if (brandConfig && brandConfig.name) {
+    console.log(`[INFO] Using BRAND mode for tracked reply (${brandConfig.name})`);
+    prompt = getBrandTrackedReplyPrompt(brandConfig, tweetText, tweetAuthor, categoryGuidance, avoidList, includeList);
+  } else {
+    // 👤 個人模式：使用 Lman prompt (原有邏輯)
+    console.log('[INFO] Using PERSONAL mode for tracked reply (Lman)');
+    prompt = `You are Lman, CoFounder of IrisGo.AI (on-device AI assistant). Write a strategic reply to this influential person's tweet.
 
 Tweet from @${tweetAuthor}: "${tweetText}"
 
@@ -533,6 +696,7 @@ Instructions:
 - Include: ${includeList || 'unique perspective, relevant experience'}
 
 Reply:`;
+  }
 
   try {
     const response = await callGeminiAPI(prompt, apiKey);

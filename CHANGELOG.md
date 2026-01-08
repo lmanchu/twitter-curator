@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-01-09
+
+### 🏢 Brand Mode Support - Fix Personal Experience Leak
+
+This version adds brand mode support to prevent personal experiences (e.g., "After 8 years...") from leaking into brand account posts.
+
+### Added
+- ✅ **`BRAND_MODE` config option** - switch between 'brand' and 'personal' mode
+- ✅ **`BRAND_CONFIG` settings** - brand name, handle, tagline, voice, perspective
+- ✅ **Brand prompt templates** in content-generator.js:
+  - `getBrandTweetPrompt()` - brand voice for original tweets
+  - `getBrandReplyPrompt()` - brand voice for replies
+  - `getBrandTrackedReplyPrompt()` - brand voice for tracked account replies
+- ✅ **Automatic mode detection** - logs which mode is active at startup
+
+### Fixed
+- 🐛 **Personal experience leak** - brand accounts no longer say "After 8 years of building..." or use first-person singular ("I", "my")
+- 🐛 **Prompt hardcoding** - prompts now dynamically switch based on config instead of hardcoded "You are Lman"
+
+### Architecture
+- Brand mode uses company perspective ("We at IrisGo...", "Our approach...")
+- Personal mode preserves original Lman voice with personal experiences
+- `brandConfig` passed through all content generation functions
+- Interest-based replies (anime/entertainment) disabled for brand accounts
+
 ## [2.5.0] - 2026-01-09
 
 ### 📚 Knowledge Base Integration for Apollo

@@ -931,6 +931,14 @@ async function main() {
       }
     }
 
+    // 讀取品牌配置（用於品牌帳號 vs 個人帳號模式切換）
+    const brandConfig = config.BRAND_MODE === 'brand' ? config.BRAND_CONFIG : null;
+    if (brandConfig) {
+      log(`🏢 BRAND MODE enabled: ${brandConfig.name} (${brandConfig.handle})`);
+    } else {
+      log('👤 PERSONAL MODE: Using Lman voice');
+    }
+
     // 啟動瀏覽器
     log('Launching browser...');
     const userDataDir = config.USER_DATA_DIR || path.join(__dirname, 'chrome-user-data');
@@ -971,7 +979,7 @@ async function main() {
         : selectRandomTopic(config.TOPICS);
       log(`Selected topic: ${topic}`);
 
-      const tweetText = await generateOriginalTweet(persona, topic, config.GEMINI_API_KEY);
+      const tweetText = await generateOriginalTweet(persona, topic, config.GEMINI_API_KEY, brandConfig);
 
       if (tweetText) {
         await postTweet(page, tweetText);
@@ -1063,11 +1071,12 @@ async function main() {
         // 根據推文類型選擇回覆生成器
         let replyText;
         if (isTracked && trackedConfig) {
-          replyText = await generateTrackedReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY, trackedConfig, tweet.trackedCategory);
+          replyText = await generateTrackedReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY, trackedConfig, tweet.trackedCategory, brandConfig);
         } else if (isInterest && interestConfig) {
+          // Interest replies 不支援品牌模式（品牌帳號不回覆 anime/entertainment）
           replyText = await generateInterestReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY, interestConfig);
         } else {
-          replyText = await generateReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY);
+          replyText = await generateReply(tweet.text, tweet.author, persona, config.GEMINI_API_KEY, null, brandConfig);
         }
 
         // ✅ 驗證回覆內容

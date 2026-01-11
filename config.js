@@ -248,7 +248,7 @@ module.exports = {
     enabled: true,
 
     // 興趣回覆比例 (每 N 則回覆中有 1 則是興趣導向)
-    ratio: 5,  // 每 5 則回覆有 1 則是興趣導向 (20%)
+    ratio: 3,  // 每 3 則回覆有 1 則是興趣導向 (~33%)
 
     // 官方帳號 - 製作公司、出版社、官方
     official_accounts: [

@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-01-12
+
+### 🎯 Reply Relevance Checking - Prevent Irrelevant Replies
+
+This version adds strict relevance checking to prevent automated replies that have no connection to the original tweet content.
+
+### Added
+- ✅ **`isRelevantToExpertise()`** - Pre-check if original tweet is in our domain
+  - Domains: AI, Startup, Product, Infrastructure, Privacy, Web3, Productivity
+  - Uses word boundary matching to avoid false positives (e.g., "PM" in "3:00 PM")
+- ✅ **`isReplyRelevant()`** - Post-generation validation
+  - Checks shared keywords between original tweet and generated reply
+  - Ensures replies are actually related to the conversation
+- ✅ **`EXPERTISE_KEYWORDS`** constant - Centralized domain keyword definitions
+- ✅ **Retry mechanism** - Up to 2 retries if generated reply is not relevant
+
+### Changed
+- `generateReply()` now skips tweets outside expertise area
+- Replies that fail relevance check are regenerated or skipped
+- Removed standalone 'pm' keyword to avoid matching time formats
+
+### Fixed
+- 🐛 **Irrelevant replies** - No longer replies to tweets about NBA schedules, politics, or other unrelated topics with forced AI/tech content
+- 🐛 **PM false positive** - "3:00 PM" no longer triggers product management relevance
+
+### Architecture
+- Pre-check: `isRelevantToExpertise()` before generating reply
+- Post-check: `isReplyRelevant()` after generation
+- Both checks must pass for reply to be sent
+
+---
+
+## [2.7.1] - 2026-01-12
+
+### 🔄 Hermes Account Switching Fix
+
+### Added
+- ✅ **DELEGATE_MODE** to Hermes config.js for automatic account switching
+  - `target_account: 'lmanchu'` ensures Hermes uses personal account
+  - Shares `chrome-user-data` with Apollo safely
+
+### Fixed
+- 🐛 **Account confusion** - Hermes was stuck on @irisgoai after Apollo ran
+- 🐛 **No posts since 1/7** - Posts were failing silently due to wrong account
+
+---
+
 ## [2.7.0] - 2026-01-09
 
 ### 🏢 LinkedIn Brand Mode Support

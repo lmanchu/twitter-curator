@@ -27,6 +27,15 @@ module.exports = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
 
   // ========================================
+  // 🔄 帳號切換模式 (與 Apollo 共用 chrome-user-data)
+  // ========================================
+  DELEGATE_MODE: {
+    enabled: true,
+    base_profile: '/Users/lman/twitter-curator/chrome-user-data',
+    target_account: 'lmanchu'  // Hermes 使用 Lman 個人帳號
+  },
+
+  // ========================================
   // ⏰ 時間配置
   // ========================================
 
@@ -43,8 +52,8 @@ module.exports = {
   // 每小時發文數量
   POSTS_PER_HOUR: 1,
 
-  // 每小時回覆數量（提升為 3 則，增加曝光）
-  REPLIES_PER_HOUR: 3,
+  // 每小時回覆數量（提升為 5 則，增加曝光）
+  REPLIES_PER_HOUR: 5,
 
   // ========================================
   // 🎨 內容配置
@@ -319,7 +328,7 @@ module.exports = {
   // 每日限制
   DAILY_LIMITS: {
     max_posts: 10,      // 最多 10 則發文
-    max_replies: 40,    // 最多 40 則回覆（夜間 8x3=24 + 白天 5x3=15）
+    max_replies: 60,    // 最多 60 則回覆（16 agents × 5 replies = 80 理論值，留 buffer）
     max_total: 60       // Twitter 每日總限制
   },
 

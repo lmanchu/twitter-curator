@@ -357,6 +357,144 @@ Output ONLY the tweet text, nothing else:`;
   return null;
 }
 
+// ========================================
+// 🎯 相關性檢查 (Relevance Filtering)
+// ========================================
+
+/**
+ * 我們可以有意義回覆的領域關鍵詞
+ * 如果原推文不包含這些關鍵詞，就跳過回覆
+ */
+const EXPERTISE_KEYWORDS = {
+  // AI/Tech 核心領域
+  ai: ['ai', 'artificial intelligence', 'machine learning', 'ml', 'llm', 'gpt', 'claude', 'gemini', 'chatgpt', 'deep learning', 'neural', 'model', 'inference', 'training', 'fine-tune', 'rag', 'embedding', 'transformer', 'agent', 'copilot'],
+
+  // 創業與商業
+  startup: ['startup', 'founder', 'entrepreneur', 'vc', 'venture', 'funding', 'seed', 'series', 'bootstrapp', 'pivot', 'pmf', 'product market fit', 'gtm', 'go to market', 'mvp', 'saas', 'b2b', 'b2c'],
+
+  // 產品與工程 (注意：移除 'pm' 避免匹配時間格式如 "3:00 PM")
+  product: ['product', 'product manager', 'product management', 'roadmap', 'feature', 'user experience', 'ux', 'ui', 'design', 'engineer', 'developer', 'dev', 'code', 'programming', 'software', 'app', 'platform', 'api', 'sdk'],
+
+  // 基礎設施
+  infra: ['infrastructure', 'cloud', 'aws', 'gcp', 'azure', 'kubernetes', 'k8s', 'docker', 'container', 'devops', 'sre', 'observability', 'monitoring', 'deployment', 'ci/cd', 'pipeline', 'linux', 'server', 'network', 'edge', 'on-premise', 'on-device', 'local-first'],
+
+  // 隱私與安全
+  privacy: ['privacy', 'security', 'data protection', 'gdpr', 'encryption', 'on-device', 'local', 'private', 'secure'],
+
+  // Web3/Blockchain (較低優先)
+  web3: ['blockchain', 'web3', 'crypto', 'defi', 'nft', 'token', 'smart contract', 'decentralized'],
+
+  // 生產力工具
+  productivity: ['productivity', 'workflow', 'automation', 'tool', 'notion', 'obsidian', 'pkm', 'knowledge management', 'second brain']
+};
+
+/**
+ * 檢查原推文是否在我們的專業領域內
+ * @param {string} tweetText - 原推文內容
+ * @returns {{isRelevant: boolean, matchedDomain: string|null, matchedKeywords: string[]}}
+ */
+function isRelevantToExpertise(tweetText) {
+  if (!tweetText) {
+    return { isRelevant: false, matchedDomain: null, matchedKeywords: [] };
+  }
+
+  const lowerText = tweetText.toLowerCase();
+  const matchedKeywords = [];
+  let matchedDomain = null;
+
+  for (const [domain, keywords] of Object.entries(EXPERTISE_KEYWORDS)) {
+    for (const keyword of keywords) {
+      // 使用 word boundary 避免部分匹配 (例如 "ai" 匹配 "fair")
+      const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (regex.test(lowerText)) {
+        matchedKeywords.push(keyword);
+        if (!matchedDomain) matchedDomain = domain;
+      }
+    }
+  }
+
+  const isRelevant = matchedKeywords.length > 0;
+
+  if (isRelevant) {
+    console.log(`[RELEVANCE] ✓ Tweet relevant to "${matchedDomain}" domain. Keywords: ${matchedKeywords.slice(0, 3).join(', ')}`);
+  } else {
+    console.log(`[RELEVANCE] ✗ Tweet NOT in expertise area. Skipping reply.`);
+  }
+
+  return { isRelevant, matchedDomain, matchedKeywords };
+}
+
+/**
+ * 檢查生成的回覆是否與原推文相關
+ * @param {string} originalTweet - 原推文
+ * @param {string} generatedReply - 生成的回覆
+ * @returns {boolean} true 如果相關
+ */
+function isReplyRelevant(originalTweet, generatedReply) {
+  if (!originalTweet || !generatedReply) return false;
+
+  // 提取原推文的關鍵詞 (長度 > 3 的單詞)
+  const originalWords = new Set(
+    originalTweet.toLowerCase()
+      .split(/\s+/)
+      .filter(w => w.length > 3)
+      .map(w => w.replace(/[^a-z0-9]/g, ''))
+      .filter(Boolean)
+  );
+
+  const replyWords = new Set(
+    generatedReply.toLowerCase()
+      .split(/\s+/)
+      .filter(w => w.length > 3)
+      .map(w => w.replace(/[^a-z0-9]/g, ''))
+      .filter(Boolean)
+  );
+
+  // 計算交集
+  const intersection = [...originalWords].filter(w => replyWords.has(w));
+
+  // 如果沒有任何共同詞彙，且回覆沒有提到任何專業領域，則視為不相關
+  if (intersection.length === 0) {
+    // 檢查回覆是否至少提到了專業領域
+    const replyLower = generatedReply.toLowerCase();
+    let hasExpertiseMention = false;
+
+    for (const keywords of Object.values(EXPERTISE_KEYWORDS)) {
+      for (const kw of keywords) {
+        if (replyLower.includes(kw)) {
+          hasExpertiseMention = true;
+          break;
+        }
+      }
+      if (hasExpertiseMention) break;
+    }
+
+    // 如果回覆既沒有與原文共同詞彙，也沒有專業領域詞彙，則不相關
+    // 但如果原文本身就是專業領域的討論，則允許專業領域的回覆
+    const { isRelevant: originalIsRelevant } = isRelevantToExpertise(originalTweet);
+
+    if (!hasExpertiseMention && !originalIsRelevant) {
+      console.log(`[RELEVANCE] ✗ Reply has no connection to original tweet. Rejecting.`);
+      return false;
+    }
+  }
+
+  // 計算相似度分數
+  const similarityScore = intersection.length / Math.min(originalWords.size, replyWords.size);
+
+  // 如果相似度太低 (< 0.1) 且沒有任何專業領域關聯，拒絕
+  if (similarityScore < 0.1 && intersection.length < 2) {
+    const { isRelevant: originalIsRelevant } = isRelevantToExpertise(originalTweet);
+    if (!originalIsRelevant) {
+      console.log(`[RELEVANCE] ✗ Reply too generic (similarity: ${(similarityScore * 100).toFixed(1)}%). Rejecting.`);
+      return false;
+    }
+  }
+
+  console.log(`[RELEVANCE] ✓ Reply relevant (shared words: ${intersection.slice(0, 5).join(', ')})`);
+  return true;
+}
+
 /**
  * 檢測不當內容 (NSFW/Spam)
  */
@@ -432,6 +570,13 @@ async function generateReply(tweetText, tweetAuthor, persona, apiKey, engagement
     return null;
   }
 
+  // 🎯 相關性預檢：確保原推文在我們的專業領域內
+  const { isRelevant, matchedDomain, matchedKeywords } = isRelevantToExpertise(tweetText);
+  if (!isRelevant) {
+    console.log(`[SKIP] Tweet from @${tweetAuthor} not in expertise area. Cannot add value.`);
+    return null;
+  }
+
   // 選擇 engagement hook 模式
   let hookPattern = 'question';
   let hookGuidance = '';
@@ -479,32 +624,51 @@ ${avoidGuidance}
 Reply:`;
   }
 
-  try {
-    const response = await callGeminiAPI(prompt, apiKey);
-    const cleaned = cleanContent(response);
+  // 最多重試 2 次，確保生成相關的回覆
+  const MAX_RELEVANCE_RETRIES = 2;
 
-    // ✅ 如果 cleanContent 失敗，直接用 OpenAI 重試
-    if (!cleaned || cleaned.length < 10) {
-      console.log('[WARN] cleanContent failed, retrying with OpenAI directly...');
-      const openaiReply = await callOpenAIDirect(prompt);
-      if (openaiReply) {
-        return openaiReply;
+  for (let attempt = 1; attempt <= MAX_RELEVANCE_RETRIES; attempt++) {
+    try {
+      const response = await callGeminiAPI(prompt, apiKey);
+      let cleaned = cleanContent(response);
+
+      // ✅ 如果 cleanContent 失敗，直接用 OpenAI 重試
+      if (!cleaned || cleaned.length < 10) {
+        console.log('[WARN] cleanContent failed, retrying with OpenAI directly...');
+        cleaned = await callOpenAIDirect(prompt);
+      }
+
+      if (!cleaned) continue;
+
+      // 🎯 相關性後驗：確保生成的回覆與原推文相關
+      if (!isReplyRelevant(tweetText, cleaned)) {
+        console.log(`[WARN] Attempt ${attempt}: Generated reply not relevant to original tweet, retrying...`);
+        continue;
+      }
+
+      console.log(`[SUCCESS] Relevant reply generated on attempt ${attempt}`);
+      return cleaned;
+
+    } catch (error) {
+      console.error(`Error generating reply (attempt ${attempt}):`, error.message);
+
+      // 最後一次嘗試 OpenAI
+      if (attempt === MAX_RELEVANCE_RETRIES) {
+        try {
+          console.log('[WARN] Final attempt with OpenAI...');
+          const openaiReply = await callOpenAIDirect(prompt);
+          if (openaiReply && isReplyRelevant(tweetText, openaiReply)) {
+            return openaiReply;
+          }
+        } catch (e) {
+          console.error('OpenAI fallback also failed:', e.message);
+        }
       }
     }
-
-    return cleaned;
-  } catch (error) {
-    console.error('Error generating reply:', error.message);
-    // ✅ 最後嘗試 OpenAI
-    try {
-      console.log('[WARN] Ollama failed, trying OpenAI as last resort...');
-      const openaiReply = await callOpenAIDirect(prompt);
-      return openaiReply;
-    } catch (e) {
-      console.error('OpenAI fallback also failed:', e.message);
-      return null;
-    }
   }
+
+  console.log('[ERROR] Failed to generate relevant reply after all attempts');
+  return null;
 }
 
 /**
@@ -1047,6 +1211,10 @@ module.exports = {
   calculateSimilarity,
   loadRecentPosts,
   isContentDuplicate,
+  // 相關性檢查
+  isRelevantToExpertise,
+  isReplyRelevant,
+  EXPERTISE_KEYWORDS,
   // 知識庫載入
   loadKnowledgeBase
 };

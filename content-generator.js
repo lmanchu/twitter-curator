@@ -151,6 +151,18 @@ Brand Identity:
 - Core belief: ${brandConfig.voice}
 - Perspective: Company/brand voice (use "we" or "${brandConfig.name}", NOT "I")
 
+=== HOOK FORMULAS (Use ONE, vary usage) ===
+🎣 CURIOSITY: "Most [users/companies] get [X] wrong. Here's what we learned."
+🎣 CONTRARIAN: "Everyone says [common belief]. We built the opposite."
+🎣 VALUE: "[Specific number] ways to [outcome] without [pain point]:"
+🎣 STORY: "When we shipped [feature], users told us..."
+
+=== VOICE PRINCIPLES ===
+📌 SPECIFIC > VAGUE: Numbers, concrete outcomes, real examples
+📌 SHORT. BREATHE. LAND: Short sentences. Let ideas sink in.
+📌 PRODUCT PHILOSOPHY > FEATURES: Why we build, not what we build
+📌 USER OUTCOMES > COMPANY PRAISE: Show impact, not self-promotion
+
 CRITICAL RULES:
 - NEVER use first-person singular ("I", "my", "me")
 - NEVER reference personal experience ("After N years...", "In my career...")
@@ -170,6 +182,7 @@ Requirements:
 - Write in English only (no translation needed)
 - NO hashtags, NO emojis
 - Add genuine insight or perspective
+- Use ONE hook formula (vary which one)
 
 Output ONLY the tweet text:`;
 }
@@ -191,6 +204,17 @@ Tweet from @${tweetAuthor}: "${tweetText}"
 Brand Identity:
 - ${brandConfig.tagline}
 - Core belief: ${brandConfig.voice}
+
+=== REPLY HOOKS (pick ONE) ===
+🎣 ADD VALUE: Share specific insight/data they didn't mention
+🎣 ASK SMART: Question that makes them think deeper
+🎣 CONTRARIAN: Respectfully challenge + offer alternative view
+🎣 CONNECT DOTS: Link their point to unexpected implication
+
+=== VOICE RULES ===
+📌 SPECIFIC: Numbers, concrete examples, real data
+📌 SHORT: 1-2 punchy sentences max
+📌 BRAND, NOT PERSONAL: "We've seen..." not "I think..."
 
 CRITICAL RULES:
 - NEVER use first-person singular ("I", "my", "me")
@@ -228,6 +252,18 @@ Tweet from @${tweetAuthor}: "${tweetText}"
 Brand Identity:
 - ${brandConfig.tagline}
 - Core belief: ${brandConfig.voice}
+
+=== KOL ENGAGEMENT HOOKS (Use ONE) ===
+🎣 CHALLENGE: Respectfully offer contrarian view with data
+🎣 EXTEND: Build on their point with unexpected angle
+🎣 QUESTION: Ask something that makes them want to respond
+🎣 SPECIFIC EXAMPLE: Share concrete case that supports/contrasts their point
+
+=== VOICE RULES ===
+📌 SPECIFICITY = CREDIBILITY: Numbers, real outcomes, concrete data
+📌 SHORT + PUNCHY: 1-2 sentences, strong finish
+📌 VALUE-ADD FIRST: Help them look smart, not us
+📌 PEAK-END: Memorable close that invites response
 
 CRITICAL RULES:
 - NEVER use first-person singular ("I", "my", "me")
@@ -270,43 +306,108 @@ async function generateOriginalTweet(persona, topic, apiKey, brandConfig = null)
     console.log('[INFO] Using PERSONAL mode (Lman)');
     const personaSummary = extractPersonaSummary(persona);
 
-    // 從 Medium 寫作風格分析中提取的推文 hooks
-    const hooks = [
-      'Have you ever wondered...',
-      'Everyone says X, but actually...',
-      'From what I\'ve observed over the years...',
-      'What we\'ll see next is...',
-      'The real question is...',
-      'Here\'s what most people miss...'
-    ];
-    const randomHook = hooks[Math.floor(Math.random() * hooks.length)];
-
-    // 從 204 篇文章分析得出的寫作風格指導
+    // 從 204 篇文章分析 + marketing-skills 優化的寫作風格指導
     const styleGuide = `
 Lman's Voice (based on 204 Medium articles, 2015-2025):
 - Direct, no-nonsense communication
 - Focus on practical insights over theory
 - Critical thinking, challenge mainstream views
-- Share first-hand experience from startup journey
+- Natural, conversational tone - NOT formulaic
 - Connect technology with business value
 - Pragmatic + idealistic mindset
 
-Writing patterns to use:
-- Contrast pattern: "Everyone thinks X, but actually Y"
-- Insight pattern: "The real problem isn't X, it's Y"
-- Experience pattern: "After N years of building..."
-- Question pattern: "Have you ever wondered why..."
+=== HOOK FORMULAS (Use ONE per tweet, vary usage) ===
+🎣 CURIOSITY: Create open loops that demand closure
+   - "Most founders get [X] wrong. Here's what actually works."
+   - "[Counterintuitive fact]. The reason why..."
+   - "I've shipped [X products]. The #1 lesson..."
 
-IMPORTANT: Generate ORIGINAL content. Never copy example phrases verbatim.
-Each tweet must be unique and fresh.
+🎣 CONTRARIAN: Challenge accepted wisdom
+   - "Everyone says [common belief]. I think the opposite."
+   - "[Popular advice] is killing your [outcome]."
+   - "Unpopular opinion: [bold statement]"
+
+🎣 STORY: Start mid-action
+   - "[Specific moment]. That's when I realized..."
+   - "Yesterday I [specific action] and discovered..."
+   - "[Time ago], I made a mistake that..."
+
+🎣 VALUE: Promise concrete outcomes
+   - "3 things that [improved X] by [Y%]:"
+   - "The framework I use to [specific outcome]:"
+   - "How to [outcome] in [timeframe]:"
+
+=== VOICE PRINCIPLES ===
+📌 SPECIFIC > VAGUE
+   ❌ "I've learned a lot from building startups"
+   ✅ "Building 3 failed startups taught me: validation before code"
+
+📌 SHORT. BREATHE. LAND.
+   ❌ "The thing I've realized after years of experience is that..."
+   ✅ "Years of shipping. One truth. Ship small."
+
+📌 SHOW > TELL
+   ❌ "I'm passionate about AI"
+   ✅ "3am debugging LLM hallucinations. Love this work."
+
+📌 NUMBERS + SPECIFICITY
+   ❌ "We improved our metrics"
+   ✅ "CAC dropped 43% after killing 3 features"
+
+=== PSYCHOLOGY TRIGGERS ===
+🧠 Jobs to Be Done: Focus on OUTCOME, not feature
+🧠 Mere Exposure: Consistency > virality (7+ touches)
+🧠 Peak-End Rule: Strong opening + memorable close
+🧠 Curiosity Gap: Open loop → valuable insight → close loop
+🧠 Specificity: Concrete details = credibility
+
+Writing Style:
+- Start naturally - NO fixed templates or patterns
+- Vary your openings: direct statements, observations, insights, questions
+- Share perspectives without forced structures
+- Be authentic and spontaneous, like a real conversation
+- Mix long and short sentences for natural rhythm
+
+CRITICAL RULES:
+🚨 NEVER use formulaic openings like:
+   - "Have you ever wondered..."
+   - "From what I've observed over the years..."
+   - "What we'll see next is..."
+   - "The real question is..."
+   - "After X years of building..."
+
+🚨 IrisGo Mention Rules:
+   - Topic category determines if you can mention IrisGo
+   - If topic is "industry" (40%) or "personal" (25%) or "technical" (15%): DO NOT mention IrisGo
+   - ONLY mention IrisGo if topic category is "product" (20%)
+   - Even for product topics, be subtle - not every sentence needs "IrisGo.AI"
+   - Most tweets should be about IDEAS, not company promotion
+
+🚨 NEVER EXPOSE AUTOMATION:
+   - Never mention: "scheduled tweets", "automation", "content calendar", "bot"
+   - Sound human: "I type fast when caffeinated", "Just in the zone"
+   - Users expect to talk to Lman the person, NOT a bot
+
+✅ DO:
+- Start with fresh, varied openings each time
+- Use ONE hook formula per tweet (vary which one)
+- Be SPECIFIC: numbers, names, concrete details
+- SHORT sentences. Let ideas breathe.
+- Focus on IDEAS and INSIGHTS, not self-promotion
+- Write like you're tweeting spontaneously, not from a script
 `;
 
-    prompt = `Write a tweet as Lman (Tech Entrepreneur, Blockchain & AI Thought Leader, IrisGo.AI CoFounder).
+    prompt = `Write a tweet as Lman (Tech Entrepreneur, Blockchain & AI Thought Leader).
 
 ${styleGuide}
 
 Topic: ${topic}
-Hook template: ${randomHook}
+
+CRITICAL - Content Focus:
+- This is a tweet about IDEAS and INSIGHTS, not company promotion
+- Start naturally - NO formulaic openings
+- Be conversational like you're sharing a thought spontaneously
+- Vary your sentence structure and rhythm
 
 Requirements:
 - Max 280 characters
@@ -315,7 +416,7 @@ Requirements:
 - Direct and authentic tone
 - Business insight + technical depth
 - Challenge common assumptions when relevant
-- Share actionable perspective
+- Sound like a real person sharing a spontaneous thought
 
 Output ONLY the tweet text, nothing else:`;
   }
@@ -606,6 +707,21 @@ async function generateReply(tweetText, tweetAuthor, persona, apiKey, engagement
 
 Tweet from @${tweetAuthor}: "${tweetText}"
 
+=== REPLY HOOKS (Use ONE) ===
+🎣 ADD VALUE: Share specific insight/data/experience they missed
+🎣 CHALLENGE: Respectfully offer contrarian view with reasoning
+🎣 QUESTION: Ask something that invites deeper conversation
+🎣 CONNECT: Link their point to unexpected implication or example
+
+=== VOICE RULES ===
+📌 SPECIFIC > VAGUE: "I cut churn 40% by..." not "This is so true!"
+📌 SHORT: 1-2 punchy sentences. Let it land.
+📌 PEAK-END: End with hook that invites response (question, challenge, cliff)
+
+CRITICAL - NEVER EXPOSE AUTOMATION:
+🚨 NEVER mention: "scheduled", "automation", "bot", "content calendar", "time zones"
+✅ Sound human and natural - use casual expressions, emotions, personal touch
+
 Engagement Strategy (${hookPattern.replace(/_/g, ' ')}):
 ${hookGuidance}
 
@@ -615,6 +731,7 @@ Instructions:
 - Write in BOTH English AND Traditional Chinese (雙語): English first, then Chinese translation on new line
 - Be conversational and add value
 - Technical but friendly
+- Use ONE hook formula above
 - Make it invite further engagement (replies, likes)
 - DO NOT paraphrase or repeat the original tweet content
 - Provide a NEW perspective, question, or personal insight
@@ -749,6 +866,10 @@ async function generateInterestReply(tweetText, tweetAuthor, persona, apiKey, in
 
 Tweet from @${tweetAuthor}: "${tweetText}"
 
+CRITICAL - NEVER EXPOSE AUTOMATION:
+🚨 NEVER mention automation, bots, or scheduled posting
+✅ Sound like a genuine fan reacting naturally and spontaneously
+
 Instructions:
 - Write as an enthusiastic fan, NOT as a tech expert
 - Max 280 characters
@@ -844,12 +965,29 @@ async function generateTrackedReply(tweetText, tweetAuthor, persona, apiKey, tra
 
 Tweet from @${tweetAuthor}: "${tweetText}"
 
+=== KOL ENGAGEMENT HOOKS (Use ONE - get noticed!) ===
+🎣 CHALLENGE: Respectfully push back with data/insight ("Actually, I've found...")
+🎣 EXTEND: Build on their point with unexpected angle they didn't consider
+🎣 QUESTION: Ask something that makes them think + want to respond
+🎣 SPECIFIC EXAMPLE: Share concrete experience that supports/contrasts their view
+
+=== VOICE RULES (CRITICAL) ===
+📌 SPECIFICITY = CREDIBILITY: "Our CAC dropped 43%" not "We improved metrics"
+📌 SHORT + PUNCHY: 1-2 sentences max. Strong finish.
+📌 VALUE-ADD FIRST: Make THEM look smart, not yourself
+📌 PEAK-END RULE: End with hook that invites response
+
+CRITICAL - NEVER EXPOSE AUTOMATION:
+🚨 NEVER mention: "scheduled", "automation", "bot", "posting system", "time zones"
+✅ Sound like a real person engaging naturally - human, authentic, spontaneous
+
 Goal: Get noticed by this person through a thoughtful, valuable reply.
 ${categoryGuidance}
 
 Instructions:
 - Max 280 characters
 - Write in BOTH English AND Traditional Chinese (雙語): English first, then Chinese translation on new line
+- Use ONE hook formula above
 - Add genuine value - share a unique insight or perspective
 - Be professional but not sycophantic
 - Show expertise without being arrogant
@@ -891,61 +1029,16 @@ Reply:`;
  * 調用本地 Ollama API (gpt-oss:20b with fallback to OpenAI)
  */
 async function callGeminiAPI(prompt, apiKey) {
-  const url = 'http://localhost:11434/api/generate';
+  // ========================================
+  // 🔄 AI Model Priority (2026-01-26 更新)
+  // ========================================
+  // 1. CLIProxyAPI (gemini-2.5-flash via OAuth) - 主要
+  // 2. Ollama (gpt-oss:20b → qwen3-coder:30b) - Fallback
+  // 3. OpenAI (gpt-4o-mini) - 最終 Fallback
 
-  // 模型列表：優先使用 gpt-oss:20b，失敗時 fallback 到 qwen3-coder:30b
-  const models = ['gpt-oss:20b', 'qwen3-coder:30b'];
-
-  for (const model of models) {
-    try {
-      const payload = {
-        model: model,
-        prompt: prompt,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          num_predict: 200,
-          top_p: 0.9,
-        }
-      };
-
-      const command = `curl -s -X POST '${url}' \
-        -H 'Content-Type: application/json' \
-        -d '${JSON.stringify(payload).replace(/'/g, "'\\''")}'`;
-
-      const response = execSync(command, { encoding: 'utf-8', timeout: 60000 });
-      const data = JSON.parse(response);
-
-      // ✅ 記錄 Token 使用（從 Ollama API 回應）
-      try {
-        localTracker.recordFromOllamaResponse('twitter-curator', data, model);
-      } catch (err) {
-        console.warn('⚠️  Failed to record local tokens:', err.message);
-      }
-
-      // gpt-oss model puts content in 'thinking' field
-      if (data.thinking) {
-        console.log(`[INFO] Using model: ${model}`);
-        return data.thinking;
-      } else if (data.response) {
-        console.log(`[INFO] Using model: ${model}`);
-        return data.response;
-      }
-
-      // 如果沒有有效響應，嘗試下一個模型
-      throw new Error('No valid response from model');
-
-    } catch (error) {
-      console.log(`[WARN] Model ${model} failed: ${error.message}, trying next...`);
-      // 繼續嘗試下一個模型
-      continue;
-    }
-  }
-
-  // ✅ Final fallback: CLIProxyAPI → OpenAI
-  console.log('[WARN] All Ollama models failed, falling back to CLIProxyAPI...');
-
-  // 1. 優先嘗試 CLIProxyAPI (gemini-2.5-flash via OAuth)
+  // ========================================
+  // 1️⃣ Primary: CLIProxyAPI (gemini-2.5-flash via OAuth)
+  // ========================================
   const proxyUrl = process.env.CLIPROXY_URL || 'http://127.0.0.1:8317';
   const proxyKey = process.env.CLIPROXY_API_KEY || 'magi-proxy-key-2026';
 
@@ -966,14 +1059,69 @@ async function callGeminiAPI(prompt, apiKey) {
     const proxyData = JSON.parse(proxyResponse);
 
     if (proxyData.choices && proxyData.choices[0]?.message?.content) {
-      console.log('[INFO] Using model: CLIProxyAPI gemini-2.5-flash (OAuth fallback)');
+      console.log('[INFO] ✅ Using model: CLIProxyAPI gemini-2.5-flash (OAuth primary)');
       return proxyData.choices[0].message.content;
     }
+    throw new Error('No valid response from CLIProxyAPI');
   } catch (proxyError) {
-    console.log(`[WARN] CLIProxyAPI failed: ${proxyError.message}, trying OpenAI...`);
+    console.log(`[WARN] CLIProxyAPI failed: ${proxyError.message}, trying Ollama...`);
   }
 
-  // 2. 最後嘗試 OpenAI
+  // ========================================
+  // 2️⃣ Fallback 1: Ollama (local models)
+  // ========================================
+  const ollamaUrl = 'http://localhost:11434/api/generate';
+  const ollamaModels = ['gpt-oss:20b', 'qwen3-coder:30b'];
+
+  for (const model of ollamaModels) {
+    try {
+      const payload = {
+        model: model,
+        prompt: prompt,
+        stream: false,
+        options: {
+          temperature: 0.7,
+          num_predict: 200,
+          top_p: 0.9,
+        }
+      };
+
+      const command = `curl -s -X POST '${ollamaUrl}' \
+        -H 'Content-Type: application/json' \
+        -d '${JSON.stringify(payload).replace(/'/g, "'\\''")}'`;
+
+      const response = execSync(command, { encoding: 'utf-8', timeout: 60000 });
+      const data = JSON.parse(response);
+
+      // ✅ 記錄 Token 使用（從 Ollama API 回應）
+      try {
+        localTracker.recordFromOllamaResponse('twitter-curator', data, model);
+      } catch (err) {
+        console.warn('⚠️  Failed to record local tokens:', err.message);
+      }
+
+      // gpt-oss model puts content in 'thinking' field
+      if (data.thinking) {
+        console.log(`[INFO] Using model: Ollama ${model} (fallback)`);
+        return data.thinking;
+      } else if (data.response) {
+        console.log(`[INFO] Using model: Ollama ${model} (fallback)`);
+        return data.response;
+      }
+
+      throw new Error('No valid response from model');
+
+    } catch (error) {
+      console.log(`[WARN] Ollama ${model} failed: ${error.message}, trying next...`);
+      continue;
+    }
+  }
+
+  // ========================================
+  // 3️⃣ Fallback 2: OpenAI (gpt-4o-mini)
+  // ========================================
+  console.log('[WARN] All Ollama models failed, trying OpenAI...');
+
   try {
     const openaiKey = process.env.OPENAI_API_KEY;
     if (!openaiKey) throw new Error('No OpenAI API key');
@@ -1001,7 +1149,7 @@ async function callGeminiAPI(prompt, apiKey) {
     throw new Error('No valid response from OpenAI');
   } catch (openaiError) {
     console.log(`[ERROR] All fallbacks failed: ${openaiError.message}`);
-    throw new Error('All AI models failed (Ollama + CLIProxyAPI + OpenAI)');
+    throw new Error('All AI models failed (CLIProxyAPI + Ollama + OpenAI)');
   }
 }
 
@@ -1057,6 +1205,16 @@ function cleanContent(content) {
     'We need to reply',
     'We need to respond',
     'We need to write',
+    'We need to produce',
+    'We need to create',
+    // Brand prompt 洩漏
+    'brand voice',
+    'On-Device AI Butler',
+    'no first-person',
+    'no corporate jargon',
+    'no mention of founder',
+    'challenge mainstream',
+    'product philosophy',
     'We should reply',
     'Let me analyze',
     'Let me think',

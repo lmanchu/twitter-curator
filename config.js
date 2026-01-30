@@ -46,14 +46,26 @@ module.exports = {
   },
 
   // ========================================
-  // 📊 頻率配置
+  // 📊 頻率配置 (基於 X 算法優化 - 2026-01-20)
   // ========================================
 
-  // 每小時發文數量
-  POSTS_PER_HOUR: 1,
+  // 每小時發文數量 - 基於作者多樣性機制
+  POSTS_PER_HOUR: 0.7,  // 平均 90 分鐘 1 條（個人帳號可稍多於品牌）
 
   // 每小時回覆數量（提升為 5 則，增加曝光）
   REPLIES_PER_HOUR: 5,
+
+  // 發文排程控制 - 新增
+  POSTING_SCHEDULE: {
+    min_interval_hours: 2.5,  // 最少間隔 2.5 小時（個人帳號稍短）
+    optimal_times: [
+      { hour: 23, timezone: 'Asia/Taipei', desc: '台北 23:00 = 美西 07:00 當天 (早晨通勤)' },
+      { hour: 2, timezone: 'Asia/Taipei', desc: '台北 02:00 = 美西 10:00 當天 (工作時段)' },
+      { hour: 5, timezone: 'Asia/Taipei', desc: '台北 05:00 = 美西 13:00 當天 (午休)' },
+      { hour: 7, timezone: 'Asia/Taipei', desc: '台北 07:00 = 美西 15:00 當天 (下午)' }
+    ],
+    max_per_window: 1  // 每個時段最多 1 條
+  },
 
   // ========================================
   // 🎨 內容配置
@@ -176,11 +188,11 @@ module.exports = {
     'Future of Work'
   ],
 
-  // 內容長度（字符數）
+  // 內容長度（字符數）- 基於 X 算法優化
   CONTENT_LENGTH: {
-    min: 50,
+    min: 50,     // 維持
     max: 280,    // Twitter 限制
-    ideal: 180
+    ideal: 120   // 從 180 降到 120（短推更容易互動）
   },
 
   // 語言設定
@@ -322,14 +334,89 @@ module.exports = {
   },
 
   // ========================================
-  // 🛡️ 安全限制
+  // 🎯 大帳號互動策略 (Reply Guy 戰術 - 2026-01-20)
   // ========================================
 
-  // 每日限制
+  // 基於 @Xprofessorrr 的 35 → 82K 成長案例：
+  // "如果堅持回覆 6 個月，輕鬆可達 10,000+ 粉絲"
+  // 個人帳號策略：更直接、更有態度、可談技術細節
+
+  INFLUENCER_ENGAGEMENT: {
+    enabled: true,
+
+    // 分層目標策略 - 個人帳號配額
+    target_tiers: [
+      {
+        name: 'mega',
+        min_followers: 1000000,     // 百萬級：1M+
+        per_day: 8,                 // 每天 8 則
+        niches: ['AI', 'Tech', 'Privacy', 'Startup', 'Web3'],
+        priority: 'highest',
+        first_reply_bonus: true,    // 搶第一個回覆
+        allow_hot_takes: true       // 個人帳號可以更大膽
+      },
+      {
+        name: 'macro',
+        min_followers: 100000,      // 十萬級：100K-1M
+        per_day: 12,                // 每天 12 則
+        niches: ['AI', 'Privacy', 'Tech', 'Startup', 'Productivity', 'Web3'],
+        priority: 'high',
+        allow_technical_depth: true // 可談技術細節
+      },
+      {
+        name: 'micro',
+        min_followers: 10000,       // 萬級：10K-100K
+        per_day: 15,                // 每天 15 則
+        niches: ['AI', 'Privacy', 'Tech', 'Startup', 'Productivity', 'IndieHacker', 'Web3'],
+        priority: 'medium',
+        personal_experience_ok: true // 可分享個人經驗
+      }
+    ],
+
+    // 即時回覆模式（個人帳號更積極）
+    priority_mode: {
+      enabled: true,
+      max_delay_minutes: 3,         // 3 分鐘內回覆（更快）
+      monitor_tracked_accounts: true,
+      quick_response_style: true    // 快速但有質量
+    },
+
+    engagement_quality: {
+      min_reply_length: 60,         // 個人帳號可以更簡短有力
+      add_unique_perspective: true,
+      personal_insights: true,      // 允許個人經驗分享
+      technical_depth_allowed: true,
+      avoid_generic_praise: true,
+
+      // Lman 風格（來自 persona）
+      style: {
+        direct: true,               // 直接不廢話
+        opinionated: true,          // 有態度
+        can_be_contrarian: true,    // 可以挑戰主流
+        casual_tone_ok: true        // "Agree or nah?" 這種語氣
+      },
+
+      // Reply Guy 質量標準
+      must_be: {
+        relevant: true,
+        meaningful: true,
+        interesting: true
+      }
+    },
+
+    // 總配額：8 + 12 + 15 = 35 則/天（大帳號回覆）
+    daily_total: 35
+  },
+
+  // ========================================
+  // 🛡️ 安全限制 (基於 X 算法 + Reply Guy 優化)
+  // ========================================
+
+  // 每日限制 - Reply Guy 策略調整
   DAILY_LIMITS: {
-    max_posts: 10,      // 最多 10 則發文
-    max_replies: 60,    // 最多 60 則回覆（16 agents × 5 replies = 80 理論值，留 buffer）
-    max_total: 60       // Twitter 每日總限制
+    max_posts: 5,       // 從 10 降到 5（避免作者多樣性衰減，配合 4 時段）
+    max_replies: 70,    // Reply Guy 策略：35 大帳號 + 35 一般（從 60 提升）
+    max_total: 75       // 5 posts + 70 replies（Reply Guy > 原創內容）
   },
 
   // ========================================
@@ -403,13 +490,49 @@ module.exports = {
   },
 
   // ========================================
-  // 💬 Engagement Hook 策略 (基於 Heavy Ranker 分析)
+  // 💬 Engagement Hook 策略 (Heavy Ranker + marketing-skills)
   // ========================================
   //
   // Twitter 的神經網路預測用戶是否會互動
   // 使用特定 pattern 可以提高回覆被看到的機率
   //
   ENGAGEMENT_HOOKS: {
+    // Hook Formulas (from marketing-skills/social-content)
+    hook_formulas: {
+      curiosity: {
+        weight: 25,
+        templates: [
+          'Most founders get [X] wrong. Here\'s what actually works.',
+          '[Counterintuitive fact]. The reason why...',
+          'I\'ve shipped [X products]. The #1 lesson...',
+        ]
+      },
+      contrarian: {
+        weight: 30,
+        templates: [
+          'Everyone says [common belief]. I think the opposite.',
+          '[Popular advice] is killing your [outcome].',
+          'Unpopular opinion: [bold statement]',
+        ]
+      },
+      story: {
+        weight: 25,
+        templates: [
+          '[Specific moment]. That\'s when I realized...',
+          'Yesterday I [specific action] and discovered...',
+          '[Time ago], I made a mistake that...',
+        ]
+      },
+      value: {
+        weight: 20,
+        templates: [
+          '3 things that [improved X] by [Y%]:',
+          'The framework I use to [specific outcome]:',
+          'How to [outcome] in [timeframe]:',
+        ]
+      }
+    },
+
     // 優先使用的 hook 類型
     preferred_patterns: [
       'question',           // 提問引發回應
@@ -432,6 +555,115 @@ module.exports = {
       hot_take: 25,
       personal_experience: 25,
       build_on: 20
+    }
+  },
+
+  // ========================================
+  // 💬 互動設計策略 (基於 X 算法優化 + marketing-skills)
+  // ========================================
+
+  ENGAGEMENT_DESIGN: {
+    // 結尾加互動觸發點（回覆權重最高）
+    call_to_action: {
+      enabled: true,
+      types: [
+        'question',          // "What's your take on...?"
+        'hot_take',          // "Agree or disagree?"
+        'share_experience'   // "Have you experienced...?"
+      ],
+      frequency: 0.6  // 60% 的內容有 CTA（個人可稍低於品牌）
+    },
+
+    // Voice Principles (from marketing-skills)
+    voice_principles: {
+      specific_over_vague: true,     // 📌 "CAC dropped 43%" not "I improved metrics"
+      short_breathe_land: true,      // 📌 Short sentences. Let it land.
+      show_over_tell: true,          // 📌 "3am debugging LLMs" not "I'm passionate about AI"
+      numbers_add_credibility: true, // 📌 Specificity = trust
+      personal_experience_ok: true,  // 📌 Unlike brand, Lman can share stories
+    },
+
+    // Psychology Triggers (from marketing-psychology)
+    psychology_triggers: {
+      jobs_to_be_done: true,   // Focus on OUTCOME reader wants
+      mere_exposure: true,     // Consistency > virality (7+ touches)
+      peak_end_rule: true,     // Strong opening + memorable close
+      curiosity_gap: true,     // Open loop → insight → close
+      pratfall_effect: true,   // Admitting flaws = more relatable
+    },
+
+    // 內容結構要求
+    structure: {
+      hook_first_sentence: true,  // 第一句要抓眼球
+      max_paragraphs: 3,          // 最多 3 段
+      prefer_short_sentences: true
+    },
+
+    // 避免負面信號
+    avoid_negative_signals: {
+      no_attack_language: true,
+      no_spam_patterns: true,
+      no_misleading_claims: true,
+      no_controversial_politics: true
+    },
+
+    // 分享價值設計
+    shareability: {
+      has_useful_info: true,
+      has_unique_perspective: true,
+      has_personal_story: true  // 個人可分享故事
+    }
+  },
+
+  // ========================================
+  // 🎬 視頻策略 (基於 X 算法優化 - 2026-01-20)
+  // ========================================
+
+  VIDEO_STRATEGY: {
+    // ⚠️ 在 Twitter 原創視頻 ROI 是負的
+    prefer_quote_over_original: true,
+
+    // 原創視頻（不推薦）
+    original_video: {
+      enabled: false,
+      optimal_duration: '15-30s',
+      must_have_subtitles: true,
+      custom_thumbnail: true,
+      hook_first_3s: true
+    },
+
+    // 引用視頻策略（推薦）
+    quote_video: {
+      enabled: true,
+      add_commentary: true,  // 加上個人觀點
+      target_sources: [
+        'industry_leaders',
+        'tech_creators',
+        'startup_content'
+      ]
+    }
+  },
+
+  // ========================================
+  // 🔄 Apollo 協作策略 (2026-01-20)
+  // ========================================
+
+  APOLLO_COLLABORATION: {
+    enabled: true,
+
+    // Hermes 幫 Apollo 推
+    support_apollo: {
+      retweet_frequency: 'selective',  // 選擇性轉發 @irisgoai
+      quality_threshold: 0.8,          // 只轉高質量內容
+      max_per_week: 2,                 // 每週最多 2 條
+      add_personal_perspective: true   // 加上個人視角
+    },
+
+    // 回應 Apollo 的品牌內容
+    respond_to_apollo: {
+      enabled: true,
+      when_relevant: true,
+      personal_voice: true  // 維持個人聲音
     }
   },
 

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-01-30
+
+### 🤖 GLM API Integration (Z.AI Coding Plan)
+
+Added GLM as fallback AI model after Gemini quota exhaustion.
+
+### Added
+- ✅ **AI_CONFIG** section in `config.js` with model priority settings
+  - Primary: `gemini-2.5-flash` (Gemini free tier + OAuth)
+  - Fallback: `glm-4.5-air` (Z.AI Coding Plan - fast)
+  - Quality: `glm-4.5` (Z.AI standard - better quality)
+- ✅ **CLIPROXY_FALLBACK_MODEL** env variable in `linkedin-content-generator.js`
+
+### Architecture
+- CLIProxyAPI now configured with `openai-compatibility` provider for GLM
+- Automatic fallback: Gemini → GLM → Ollama → OpenAI
+- GLM models available: glm-4.5-air, glm-4.5, glm-4.6, glm-4.7
+
+---
+
 ## [2.8.0] - 2026-01-12
 
 ### 🎯 Reply Relevance Checking - Prevent Irrelevant Replies

@@ -18,9 +18,11 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 
 // CLIProxyAPI configuration (unified AI proxy - OAuth-based, no quota limits)
+// Fallback chain: Gemini → GLM (Z.AI) → OpenAI
 const CLIPROXY_URL = process.env.CLIPROXY_URL || 'http://127.0.0.1:8317';
 const CLIPROXY_API_KEY = process.env.CLIPROXY_API_KEY || 'magi-proxy-key-2026';
 const CLIPROXY_MODEL = process.env.CLIPROXY_MODEL || 'gemini-2.5-flash';
+const CLIPROXY_FALLBACK_MODEL = process.env.CLIPROXY_FALLBACK_MODEL || 'glm-4.5';  // Z.AI GLM for LinkedIn (quality)
 
 /**
  * 從 Persona 提取關鍵信息

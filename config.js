@@ -27,6 +27,30 @@ module.exports = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
 
   // ========================================
+  // 🤖 AI Model Configuration (2026-01-30)
+  // ========================================
+  // Priority: CLIProxyAPI → Ollama → OpenAI
+  // CLIProxyAPI fallback: Gemini → GLM → OpenAI
+  AI_CONFIG: {
+    // Primary: CLIProxyAPI (統一代理)
+    cliproxy: {
+      url: process.env.CLIPROXY_URL || 'http://127.0.0.1:8317',
+      key: process.env.CLIPROXY_API_KEY || 'magi-proxy-key-2026',
+      // 可用模型 (按優先順序)
+      models: {
+        primary: 'gemini-2.5-flash',     // Gemini (免費額度 + OAuth)
+        fallback: 'glm-4.5-air',         // GLM (Z.AI Coding Plan)
+        quality: 'glm-4.5',              // GLM 標準版 (品質優先時)
+      }
+    },
+    // 本地 Ollama (離線備援)
+    ollama: {
+      url: 'http://localhost:11434',
+      models: ['qwen3-coder:30b', 'gpt-oss:20b']
+    }
+  },
+
+  // ========================================
   // 🔄 帳號切換模式 (與 Apollo 共用 chrome-user-data)
   // ========================================
   DELEGATE_MODE: {

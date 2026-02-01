@@ -37,6 +37,51 @@ try {
 puppeteer.use(StealthPlugin());
 
 // ========================================
+// 🔮 Shadow DOM Helper (LinkedIn uses Shadow DOM for share modal)
+// ========================================
+
+/**
+ * Get the LinkedIn share modal's Shadow DOM root
+ * LinkedIn's share modal is inside #interop-outlet's shadowRoot
+ */
+function getShadowDOMHelper() {
+  return `
+    // Helper to search in Shadow DOM
+    function getLinkedInShadowRoot() {
+      const interopOutlet = document.querySelector('#interop-outlet');
+      return interopOutlet?.shadowRoot || null;
+    }
+
+    // Search in both main DOM and Shadow DOM
+    function queryShadowSelector(selector) {
+      // First try main DOM
+      let el = document.querySelector(selector);
+      if (el) return el;
+
+      // Try Shadow DOM
+      const shadowRoot = getLinkedInShadowRoot();
+      if (shadowRoot) {
+        el = shadowRoot.querySelector(selector);
+      }
+      return el;
+    }
+
+    // Search all matching elements in both DOMs
+    function queryShadowSelectorAll(selector) {
+      const results = [];
+      // Main DOM
+      results.push(...document.querySelectorAll(selector));
+      // Shadow DOM
+      const shadowRoot = getLinkedInShadowRoot();
+      if (shadowRoot) {
+        results.push(...shadowRoot.querySelectorAll(selector));
+      }
+      return results;
+    }
+  `;
+}
+
+// ========================================
 // 🎯 Tracked Accounts 解析
 // ========================================
 
@@ -350,35 +395,730 @@ async function postLinkedInPost(page, postText) {
       await startPostItem.click();
       log('Clicked Start a post');
     } else {
-      // Personal account: Click "Start a post" directly
+      // Personal account: Click "Start a post" - try multiple strategies
       log('Looking for Start a post button...');
-      const startPostButtonHandle = await page.evaluateHandle(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        return buttons.find(btn => btn.textContent.trim() === 'Start a post');
-      });
-      const startPostButton = startPostButtonHandle.asElement();
-      if (!startPostButton) {
-        throw new Error('Start a post button not found');
-      }
-      await startPostButton.click();
-      log('Clicked Start a post button');
-    }
-    await randomDelay(2000, 3000);
 
-    // 輸入貼文內容
-    const editorSelector = 'div.ql-editor[contenteditable="true"]';
-    await page.waitForSelector(editorSelector, { timeout: 10000 });
-    await page.click(editorSelector);
+      // Strategy 1: Try multiple selectors in priority order
+      const selectors = [
+        // LinkedIn's share box (most common)
+        '.share-box-feed-entry__trigger',
+        'button.share-box-feed-entry__trigger',
+        '[data-test-icon="create-post"]',
+        // Fallback: search all clickable elements
+        'button[aria-label*="Start a post"]',
+        'button[aria-label*="start a post"]',
+        'div[role="button"][aria-label*="Start"]'
+      ];
+
+      let clicked = false;
+      for (const selector of selectors) {
+        try {
+          const element = await page.$(selector);
+          if (element) {
+            await element.click();
+            log(`Clicked Start a post using selector: ${selector}`);
+            clicked = true;
+            break;
+          }
+        } catch (e) {
+          // Continue to next selector
+        }
+      }
+
+      // Strategy 2: If all selectors fail, search by text content
+      if (!clicked) {
+        log('All selectors failed, trying text-based search...');
+        const startPostButtonHandle = await page.evaluateHandle(() => {
+          // Search in buttons AND divs with role="button"
+          const elements = [
+            ...Array.from(document.querySelectorAll('button')),
+            ...Array.from(document.querySelectorAll('div[role="button"]'))
+          ];
+          return elements.find(el => {
+            const text = el.textContent?.trim() || '';
+            return text === 'Start a post' || text.startsWith('Start a post');
+          });
+        });
+        const startPostButton = startPostButtonHandle.asElement();
+        if (!startPostButton) {
+          throw new Error('Start a post button not found (tried all strategies)');
+        }
+        await startPostButton.click();
+        log('Clicked Start a post button (text-based search)');
+      }
+    }
+
+    // Wait for LinkedIn share modal to appear (with explicit check)
+    // IMPORTANT: LinkedIn uses Shadow DOM (#interop-outlet.shadowRoot) for share modal
+    log('Waiting for post modal to open...');
+    let shareModalFound = false;
+
+    // Try up to 10 seconds with checks every 500ms
+    for (let i = 0; i < 20 && !shareModalFound; i++) {
+      await randomDelay(500, 500);
+      shareModalFound = await page.evaluate(() => {
+        // LinkedIn's share modal is in Shadow DOM
+        const shadowRoot = document.querySelector('#interop-outlet')?.shadowRoot;
+        if (!shadowRoot) return false;
+
+        // Check for modal in Shadow DOM
+        const modal = shadowRoot.querySelector('.artdeco-modal.share-box-v2__modal') ||
+                      shadowRoot.querySelector('[role="dialog"]');
+        if (modal) {
+          const rect = modal.getBoundingClientRect();
+          if (rect.width > 100 && rect.height > 100) return true;
+        }
+
+        // Also check for the editor (ql-editor) in Shadow DOM
+        const editor = shadowRoot.querySelector('.ql-editor[contenteditable="true"]');
+        if (editor) {
+          const rect = editor.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) return true;
+        }
+
+        return false;
+      });
+
+      if (shareModalFound) {
+        log(`✓ Share modal detected in Shadow DOM after ${(i + 1) * 0.5}s`);
+      }
+    }
+
+    if (!shareModalFound) {
+      log('⚠️ Share modal not detected after 10s, proceeding anyway...', 'WARN');
+      await page.screenshot({ path: '/tmp/linkedin-no-modal.png' });
+    }
+
+    // Additional wait for React to fully initialize
+    await randomDelay(1500, 2500);
+
+    // CRITICAL: Find and click the actual input area to activate editor
+    // LinkedIn uses Shadow DOM (#interop-outlet.shadowRoot) for the share modal
+    log('Finding and clicking input area to activate editor (Shadow DOM)...');
+    try {
+      const activated = await page.evaluate(() => {
+        // LinkedIn's share modal is in Shadow DOM
+        const shadowRoot = document.querySelector('#interop-outlet')?.shadowRoot;
+        if (!shadowRoot) return false;
+
+        // Find the modal in Shadow DOM
+        const modal = shadowRoot.querySelector('.artdeco-modal.share-box-v2__modal') ||
+                      shadowRoot.querySelector('[role="dialog"]');
+        if (!modal) return false;
+
+        // Strategy 1: Find by "What do you want to talk about?" placeholder text
+        const placeholderTexts = ['What do you want to talk about?', 'Share your thoughts'];
+        for (const text of placeholderTexts) {
+          const elements = Array.from(modal.querySelectorAll('*')).filter(el =>
+            el.textContent?.trim() === text || el.getAttribute('data-placeholder')?.includes(text)
+          );
+
+          if (elements.length > 0) {
+            // Try to find the editable container near this text
+            for (const el of elements) {
+              const container = el.closest('div[role="textbox"]') ||
+                               el.parentElement?.querySelector('div') ||
+                               el.nextElementSibling;
+              if (container) {
+                container.click();
+                container.focus();
+                return true;
+              }
+            }
+          }
+        }
+
+        // Strategy 2: Find the largest visible empty div in modal (likely the input area)
+        const allDivs = Array.from(modal.querySelectorAll('div'));
+        const candidateDivs = allDivs.filter(div => {
+          const rect = div.getBoundingClientRect();
+          const style = window.getComputedStyle(div);
+          const hasMinSize = rect.width > 200 && rect.height > 60;
+          const isVisible = style.display !== 'none' && style.visibility !== 'hidden';
+          const hasLightBackground = style.backgroundColor.includes('255, 255, 255') ||
+                                    style.backgroundColor.includes('250, 250, 250') ||
+                                    style.backgroundColor === 'transparent';
+          return hasMinSize && isVisible && hasLightBackground;
+        });
+
+        // Sort by area (largest first)
+        candidateDivs.sort((a, b) => {
+          const areaA = a.getBoundingClientRect().width * a.getBoundingClientRect().height;
+          const areaB = b.getBoundingClientRect().width * b.getBoundingClientRect().height;
+          return areaB - areaA;
+        });
+
+        // Click the largest candidate (but not the modal itself)
+        for (const div of candidateDivs) {
+          if (div !== modal && !div.querySelector('[role="dialog"]')) {
+            div.click();
+            div.focus();
+            return true;
+          }
+        }
+
+        return false;
+      });
+
+      if (activated) {
+        await randomDelay(2000, 3000); // Wait longer for React to initialize contenteditable
+        log('Activated editor with targeted click ✓');
+      } else {
+        log('Could not find input area to click', 'WARN');
+      }
+    } catch (e) {
+      log(`Could not activate editor: ${e.message}`, 'WARN');
+    }
+
+    // STRATEGY: Try direct typing first without finding editor element
+    // LinkedIn's editor is focused automatically after modal opens
+    log('Attempting direct typing into focused editor...');
+    try {
+      await randomDelay(1000, 1500);
+      await page.keyboard.type(postText, { delay: 50 });
+      log('✓ Successfully typed content directly');
+
+      // CRITICAL: Find and click the blue Post button IMMEDIATELY
+      // Don't wait too long or modal might close
+      await randomDelay(500, 1000);
+      log('Finding and clicking Post button with JavaScript (immediate)...');
+
+      const buttonDebugInfo = await page.evaluate(() => {
+        // IMPORTANT: LinkedIn uses Shadow DOM for share modal
+        const shadowRoot = document.querySelector('#interop-outlet')?.shadowRoot;
+
+        // Get buttons from both main DOM and Shadow DOM
+        const mainButtons = Array.from(document.querySelectorAll('button'));
+        const shadowButtons = shadowRoot ? Array.from(shadowRoot.querySelectorAll('button')) : [];
+        const allButtons = [...mainButtons, ...shadowButtons];
+
+        // Debug: log all buttons info
+        const debugInfo = {
+          totalButtons: allButtons.length,
+          shadowButtons: shadowButtons.length,
+          buttonDetails: allButtons.slice(0, 50).map(btn => ({
+            text: btn.textContent?.trim() || '',
+            disabled: btn.disabled,
+            ariaDisabled: btn.getAttribute('aria-disabled'),
+            visible: btn.getBoundingClientRect().width > 0,
+            inDialog: !!btn.closest('[role="dialog"]'),
+            inShadow: shadowButtons.includes(btn)
+          })),
+          postButtonsFound: 0,
+          clickAttempted: false
+        };
+
+        // Find Post buttons (visible, not disabled, with text "Post")
+        // Prioritize buttons in Shadow DOM (modal)
+        const postButtons = allButtons.filter(btn => {
+          const text = btn.textContent?.trim() || '';
+          const disabled = btn.disabled || btn.getAttribute('aria-disabled') === 'true';
+
+          if (text === 'Post' && !disabled) {
+            const rect = btn.getBoundingClientRect();
+            const isVisible = rect.width > 0 && rect.height > 0;
+            const style = window.getComputedStyle(btn);
+            const isDisplayed = style.display !== 'none' && style.visibility !== 'hidden';
+
+            return isVisible && isDisplayed;
+          }
+          return false;
+        });
+
+        // Sort to prioritize Shadow DOM buttons (modal buttons)
+        postButtons.sort((a, b) => {
+          const aInShadow = shadowButtons.includes(a) ? 1 : 0;
+          const bInShadow = shadowButtons.includes(b) ? 1 : 0;
+          return bInShadow - aInShadow; // Shadow buttons first
+        });
+
+        debugInfo.postButtonsFound = postButtons.length;
+
+        // Prefer button in modal/dialog
+        let targetButton = null;
+        for (const btn of postButtons) {
+          let parent = btn.parentElement;
+          while (parent && parent !== document.body) {
+            const role = parent.getAttribute('role');
+            const classes = parent.className?.toString() || '';
+
+            if (role === 'dialog' ||
+                classes.includes('share-creation') ||
+                classes.includes('artdeco-modal')) {
+              targetButton = btn;
+              break;
+            }
+            parent = parent.parentElement;
+          }
+          if (targetButton) break;
+        }
+
+        // If no modal button found, use first visible Post button
+        if (!targetButton && postButtons.length > 0) {
+          targetButton = postButtons[0];
+        }
+
+        if (targetButton) {
+          // Try multiple click methods
+          targetButton.click(); // Native click
+          targetButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); // Synthetic click
+
+          debugInfo.clickAttempted = true;
+        }
+
+        return debugInfo;
+      });
+
+      log(`🔍 Button Debug: Total=${buttonDebugInfo.totalButtons}, PostButtons=${buttonDebugInfo.postButtonsFound}, Clicked=${buttonDebugInfo.clickAttempted}`);
+
+      if (buttonDebugInfo.buttonDetails.length > 0) {
+        // Log ALL button texts to see what's available
+        const allButtonTexts = buttonDebugInfo.buttonDetails
+          .filter(b => b.text && b.text.length > 0 && b.text.length < 50)
+          .map(b => ({
+            text: b.text,
+            disabled: b.disabled,
+            inDialog: b.inDialog,
+            visible: b.visible
+          }));
+
+        log(`📋 All buttons (first 50): ${JSON.stringify(allButtonTexts, null, 2)}`);
+
+        const postRelatedButtons = buttonDebugInfo.buttonDetails.filter(b =>
+          b.text && (b.text.includes('Post') || b.text === 'Post' || b.text.includes('發佈'))
+        );
+        if (postRelatedButtons.length > 0) {
+          log(`📋 Post-related buttons found: ${JSON.stringify(postRelatedButtons, null, 2)}`);
+        }
+      }
+
+      if (!buttonDebugInfo.clickAttempted) {
+        log('⚠️ Could not find Post button with JavaScript', 'WARN');
+      } else {
+        log('✓ Clicked Post button with JavaScript');
+      }
+
+      // Wait for modal to close (indicates successful post)
+      await randomDelay(3000, 4000);
+
+      const modalClosedAfterClick = await page.evaluate(() => {
+        const modals = document.querySelectorAll('[role="dialog"]');
+        for (const modal of modals) {
+          const classes = modal.className || '';
+          if (classes.includes('share') || classes.includes('artdeco')) {
+            const rect = modal.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              return false; // Modal still visible
+            }
+          }
+        }
+        return true; // Modal closed or not found
+      });
+
+      if (modalClosedAfterClick) {
+        log('✅ Post submitted successfully! Modal closed.');
+
+        // 記錄已發布 (2026-02-01 fix: 這條路徑之前沒有記錄)
+        const posted = loadJSON(config.PATHS.posted);
+        posted.push({
+          text: postText.substring(0, 200),
+          timestamp: new Date().toISOString(),
+          platform: 'linkedin',
+          method: 'puppeteer-js'
+        });
+        saveJSON(config.PATHS.posted, posted);
+        log('📝 Saved to posted-linkedin.json');
+
+        incrementPostCount();
+        await randomDelay(2000, 3000);
+        log('Post submission completed ✓');
+        return true; // Success! Exit early
+      } else {
+        log('⚠️ Modal still open after JavaScript click', 'WARN');
+        await page.screenshot({ path: '/tmp/linkedin-still-open.png' });
+      }
+
+      // FALLBACK: Try Puppeteer click as last resort
+      log('Trying Puppeteer click as last resort...');
+
+      // SIMPLIFIED: Find any visible "Post" button that's not disabled
+      const buttonFound = await page.evaluate(() => {
+        // Find all buttons with text "Post"
+        const allButtons = Array.from(document.querySelectorAll('button'));
+        const postButtons = allButtons.filter(btn => {
+          const text = btn.textContent?.trim() || '';
+          const disabled = btn.disabled || btn.getAttribute('aria-disabled') === 'true';
+
+          if (text === 'Post' && !disabled) {
+            // Must be visible
+            const rect = btn.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }
+          return false;
+        });
+
+        // If multiple Post buttons, prefer the one in a dialog/modal
+        if (postButtons.length > 1) {
+          const inModal = postButtons.find(btn => {
+            let parent = btn.parentElement;
+            while (parent) {
+              if (parent.getAttribute('role') === 'dialog' ||
+                  parent.classList.toString().includes('share') ||
+                  parent.classList.toString().includes('modal')) {
+                return true;
+              }
+              parent = parent.parentElement;
+            }
+            return false;
+          });
+
+          if (inModal) {
+            inModal.setAttribute('data-linkedin-post-button-found', 'true');
+            return true;
+          }
+        }
+
+        // Otherwise use the first one
+        if (postButtons.length > 0) {
+          postButtons[0].setAttribute('data-linkedin-post-button-found', 'true');
+          return true;
+        }
+
+        return false;
+      });
+
+      if (!buttonFound) {
+        // Fallback: try simple text search
+        log('Modal search failed, trying simple button search...', 'WARN');
+        const fallbackFound = await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button'));
+          for (const btn of buttons) {
+            const text = btn.textContent?.trim() || '';
+            if (text === 'Post' && !btn.disabled) {
+              const rect = btn.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                btn.setAttribute('data-linkedin-post-button-found', 'true');
+                return true;
+              }
+            }
+          }
+          return false;
+        });
+
+        if (!fallbackFound) {
+          throw new Error('Post button not found after typing');
+        }
+        log('Found Post button via fallback search');
+      } else {
+        log('Found Post button in modal bottom area');
+      }
+
+      const postButton = await page.$('[data-linkedin-post-button-found="true"]');
+      if (!postButton) {
+        throw new Error('Could not locate marked Post button');
+      }
+
+      await randomDelay(1000, 2000);
+      await postButton.click();
+      log('Clicked Post button');
+
+      // Wait longer and verify modal closes (indicates successful post)
+      await randomDelay(2000, 3000);
+
+      const modalClosed = await page.evaluate(() => {
+        const modals = document.querySelectorAll('[role="dialog"]');
+        for (const modal of modals) {
+          const classes = modal.className || '';
+          if (classes.includes('share-creation-state') ||
+              modal.querySelector('[data-test-modal-container]')) {
+            const rect = modal.getBoundingClientRect();
+            return rect.width === 0 || rect.height === 0 ||
+                   window.getComputedStyle(modal).display === 'none';
+          }
+        }
+        return true; // If no modal found, assume it closed
+      });
+
+      if (modalClosed) {
+        log('✅ Post submitted successfully! Modal closed.');
+      } else {
+        log('⚠️ Modal still open - checking for confirmation needed...', 'WARN');
+
+        // Check if there's a confirmation dialog or additional step
+        await page.screenshot({ path: '/tmp/linkedin-post-confirmation.png' });
+        log('Screenshot saved to /tmp/linkedin-post-confirmation.png');
+
+        // Try looking for "Post anyway" or similar confirmation button
+        const confirmationButton = await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button'));
+          const confirmBtn = buttons.find(btn => {
+            const text = btn.textContent?.trim() || '';
+            return text === 'Post anyway' || text === 'Yes' || text === 'Confirm';
+          });
+          if (confirmBtn) {
+            confirmBtn.click();
+            return true;
+          }
+          return false;
+        });
+
+        if (confirmationButton) {
+          log('✅ Clicked confirmation button');
+          await randomDelay(2000, 3000);
+        }
+      }
+
+      // 記錄已發布 (2026-02-01 fix: 這條路徑之前沒有記錄)
+      const posted = loadJSON(config.PATHS.posted);
+      posted.push({
+        text: postText.substring(0, 200),
+        timestamp: new Date().toISOString(),
+        platform: 'linkedin',
+        method: 'puppeteer-direct'
+      });
+      saveJSON(config.PATHS.posted, posted);
+      log('📝 Saved to posted-linkedin.json');
+
+      incrementPostCount();
+      await randomDelay(2000, 3000);
+      log('Post submission completed ✓');
+
+      return true; // Success! Exit early
+
+    } catch (directTypingError) {
+      log(`Direct typing failed: ${directTypingError.message}`, 'WARN');
+      log('Falling back to traditional editor search method...');
+    }
+
+    // FALLBACK: Traditional editor search if direct typing fails
+    log('Looking for post editor...');
+    const editorSelectors = [
+      // Match "What do you want to talk about?" placeholder
+      'div[data-placeholder*="What do you want"]',
+      'div[data-placeholder*="talk about"]',
+      'div[aria-placeholder*="What do you want"]',
+      // Standard selectors
+      'div.ql-editor[contenteditable="true"]',          // Old LinkedIn
+      '.ql-editor[contenteditable="true"]',             // Without div
+      'div[contenteditable="true"][role="textbox"]',    // New LinkedIn
+      'div[contenteditable="true"]',                     // Generic
+      '[data-placeholder*="share"]',                     // By placeholder
+      'div[aria-label*="Text editor"]',                  // By ARIA label
+      'div[aria-label*="editor"]',                       // Lowercase
+      'div.editor[contenteditable]',                     // Class name
+      'p[contenteditable="true"]',                       // P tag (some LinkedIn versions)
+      '[data-test-editor-content-editable]',             // Data attribute
+      // Fallback: any contenteditable in the modal
+      '.share-creation-state__text-editor [contenteditable]',
+      'form [contenteditable="true"]'
+    ];
+
+    let editor = null;
+    let usedSelector = null;
+
+    for (const selector of editorSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 5000 });
+        editor = await page.$(selector);
+        if (editor) {
+          usedSelector = selector;
+          log(`Found editor using: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    // Final fallback: JavaScript search for ANY editable element in the modal
+    if (!editor) {
+      log('All selectors failed, trying JavaScript element search...');
+
+      const editableElement = await page.evaluate(() => {
+        // Strategy 1: Find all contenteditable elements
+        const contentEditables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
+
+        // Strategy 2: Find elements in the share modal specifically
+        // Use precise selector to avoid vjs-* (video.js) dialogs
+        let modal = document.querySelector('.share-creation-state') ||
+                    document.querySelector('.artdeco-modal[role="dialog"]');
+        if (!modal) {
+          // Fallback: find visible dialog excluding video.js
+          const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+          modal = dialogs.find(d => {
+            const classes = d.className?.toString() || '';
+            const rect = d.getBoundingClientRect();
+            return !classes.includes('vjs-') && rect.width > 100 && rect.height > 100;
+          });
+        }
+        if (modal) {
+          const modalEditables = Array.from(modal.querySelectorAll('[contenteditable], textarea, input[type="text"]'));
+          contentEditables.push(...modalEditables);
+        }
+
+        // Strategy 3: Find by common class patterns
+        const classPatterns = [
+          'ql-editor',
+          'editor',
+          'text-editor',
+          'composer',
+          'share-box'
+        ];
+        for (const pattern of classPatterns) {
+          const elements = Array.from(document.querySelectorAll(`[class*="${pattern}"]`));
+          contentEditables.push(...elements);
+        }
+
+        // Return the first visible, editable element
+        for (const el of contentEditables) {
+          const rect = el.getBoundingClientRect();
+          const isVisible = rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none';
+          if (isVisible) {
+            // Mark it so we can find it with Puppeteer
+            el.setAttribute('data-linkedin-editor-found', 'true');
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (editableElement) {
+        log('Found editor via JavaScript search');
+        usedSelector = '[data-linkedin-editor-found="true"]';
+        editor = await page.$(usedSelector);
+      }
+    }
+
+    if (!editor) {
+      // DEBUG: Print modal DOM structure to understand what's actually there
+      log('🔍 DEBUG: Analyzing modal DOM structure...');
+      const modalDebugInfo = await page.evaluate(() => {
+        // Use precise selector to avoid vjs-* (video.js) dialogs
+        let modal = document.querySelector('.share-creation-state') ||
+                    document.querySelector('.artdeco-modal[role="dialog"]');
+        if (!modal) {
+          const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+          modal = dialogs.find(d => {
+            const classes = d.className?.toString() || '';
+            const rect = d.getBoundingClientRect();
+            return !classes.includes('vjs-') && rect.width > 100 && rect.height > 100;
+          });
+        }
+        if (!modal) return { error: 'LinkedIn share modal not found (vjs dialogs excluded)' };
+
+        const info = {
+          modalFound: true,
+          modalClasses: modal.className,
+          modalRole: modal.getAttribute('role'),
+          allDivs: [],
+          allInputs: [],
+          allTextareas: [],
+          allContentEditables: []
+        };
+
+        // Find all divs in modal (first 20 for brevity)
+        const divs = Array.from(modal.querySelectorAll('div'));
+        info.allDivs = divs.slice(0, 20).map(div => {
+          const rect = div.getBoundingClientRect();
+          return {
+            tag: div.tagName,
+            classes: div.className ? div.className.substring(0, 80) : '',
+            role: div.getAttribute('role'),
+            contenteditable: div.getAttribute('contenteditable'),
+            ariaLabel: div.getAttribute('aria-label'),
+            dataPlaceholder: div.getAttribute('data-placeholder'),
+            text: div.textContent?.substring(0, 50),
+            hasChildren: div.children.length,
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            visible: rect.height > 0
+          };
+        });
+
+        // Find all inputs
+        info.allInputs = Array.from(modal.querySelectorAll('input')).map(input => ({
+          type: input.type,
+          placeholder: input.placeholder,
+          name: input.name,
+          classes: input.className
+        }));
+
+        // Find all textareas
+        info.allTextareas = Array.from(modal.querySelectorAll('textarea')).map(ta => ({
+          placeholder: ta.placeholder,
+          name: ta.name,
+          classes: ta.className
+        }));
+
+        // Find all contenteditable elements (not just in modal)
+        info.allContentEditables = Array.from(document.querySelectorAll('[contenteditable]')).map(el => ({
+          tag: el.tagName,
+          contenteditable: el.getAttribute('contenteditable'),
+          classes: el.className ? el.className.substring(0, 80) : '',
+          inModal: modal.contains(el)
+        }));
+
+        return info;
+      });
+
+      log('📋 Modal Debug Info:');
+      log(JSON.stringify(modalDebugInfo, null, 2));
+
+      // Last resort: take a screenshot for debugging
+      await page.screenshot({ path: '/tmp/linkedin-editor-not-found.png' });
+      log('Saved debug screenshot to /tmp/linkedin-editor-not-found.png');
+      throw new Error('Post editor not found (tried all strategies including JS search)');
+    }
+
+    await page.click(usedSelector);
     await randomDelay(500, 1000);
 
     // 輸入文字
-    await page.type(editorSelector, postText, { delay: 30 });
+    await page.type(usedSelector, postText, { delay: 30 });
     await randomDelay(2000, 3000);
 
-    // 點擊 Post 按鈕
-    const postButtonSelector = 'button[class*="share-actions__primary-action"]';
-    const postButton = await page.$(postButtonSelector);
-    
+    // 點擊 Post 按鈕 - try multiple selectors
+    log('Looking for Post button...');
+    const postButtonSelectors = [
+      'button[class*="share-actions__primary-action"]',  // Old selector
+      'button[data-test-modal-id="share-box-post-button"]',  // New selector
+      'button[aria-label*="Post"]',                      // ARIA label
+      'button.share-actions__primary-action',            // Direct class
+      'button[type="submit"]'                            // Form submit
+    ];
+
+    let postButton = null;
+    let usedPostSelector = null;
+
+    for (const selector of postButtonSelectors) {
+      try {
+        postButton = await page.$(selector);
+        if (postButton) {
+          usedPostSelector = selector;
+          log(`Found Post button using: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    // Fallback: search by text
+    if (!postButton) {
+      log('All Post button selectors failed, trying text-based search...');
+      const postButtonHandle = await page.evaluateHandle(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        return buttons.find(btn => {
+          const text = btn.textContent?.trim() || '';
+          return text === 'Post' || text === 'Publish';
+        });
+      });
+      postButton = postButtonHandle.asElement();
+      if (postButton) {
+        log('Found Post button by text search');
+      }
+    }
+
     if (postButton) {
       await postButton.click();
       await randomDelay(5000, 7000);
@@ -400,7 +1140,7 @@ async function postLinkedInPost(page, postText) {
       return true;
     }
 
-    log('Post button not found', 'ERROR');
+    log('Post button not found (tried all strategies)', 'ERROR');
     return false;
 
   } catch (error) {
@@ -440,32 +1180,49 @@ async function searchTrackedAccountPosts(page, trackedAccounts) {
     await randomDelay(2000, 3000);
 
     // 等待貼文載入
+    // 2026-01-28: 優先使用新的 data-view-name selector
     try {
-      await page.waitForSelector('[class*="feed-shared-update-v2"]', { timeout: 20000 });
+      await page.waitForSelector('[data-view-name="feed-full-update"]', { timeout: 20000 });
     } catch (e) {
-      log('No posts found from tracked account, falling back...', 'WARN');
-      return null;
+      try {
+        await page.waitForSelector('[class*="feed-shared-update-v2"]', { timeout: 10000 });
+      } catch (e2) {
+        log('No posts found from tracked account, falling back...', 'WARN');
+        return null;
+      }
     }
 
     // 提取貼文（使用與 searchRelevantPosts 相同的邏輯）
     const posts = await page.evaluate(() => {
-      const postElements = Array.from(document.querySelectorAll('[class*="feed-shared-update-v2"]'));
+      // 2026-01-28: 優先使用新的 data-view-name selector
+      let postElements = Array.from(document.querySelectorAll('[data-view-name="feed-full-update"]'));
+      if (postElements.length === 0) {
+        postElements = Array.from(document.querySelectorAll('[class*="feed-shared-update-v2"]'));
+      }
 
       return postElements.slice(0, 10).map((post, index) => {
         try {
+          // 2026-01-28: 優先用 href pattern 找作者
           let author = 'Unknown';
-          const authorSelectors = [
-            '[class*="update-components-actor__name"]',
-            '[class*="entity-result__title"]',
-            '[data-test-link-to-profile-link]',
-            'span.update-components-actor__name span[aria-hidden="true"]'
-          ];
+          const authorLink = post.querySelector('a[href*="/in/"]') || post.querySelector('a[href*="/company/"]');
+          if (authorLink) {
+            const nameSpan = authorLink.querySelector('span');
+            if (nameSpan) author = nameSpan.textContent.trim();
+          }
+          if (author === 'Unknown') {
+            const authorSelectors = [
+              '[class*="update-components-actor__name"]',
+              '[class*="entity-result__title"]',
+              '[data-test-link-to-profile-link]',
+              'span.update-components-actor__name span[aria-hidden="true"]'
+            ];
 
-          for (const selector of authorSelectors) {
-            const authorElement = post.querySelector(selector);
-            if (authorElement && authorElement.textContent.trim()) {
-              author = authorElement.textContent.trim();
-              break;
+            for (const selector of authorSelectors) {
+              const authorElement = post.querySelector(selector);
+              if (authorElement && authorElement.textContent.trim()) {
+                author = authorElement.textContent.trim();
+                break;
+              }
             }
           }
 
@@ -567,21 +1324,26 @@ async function searchRelevantPosts(page) {
     await randomDelay(2000, 3000);
 
     // 使用更長的 timeout 等待貼文元素
+    // 2026-01-28: LinkedIn 改用 data-view-name 取代 class-based selector
     try {
-      await page.waitForSelector('[class*="feed-shared-update-v2"]', { timeout: 20000 });
+      await page.waitForSelector('[data-view-name="feed-full-update"]', { timeout: 20000 });
     } catch (e) {
       log('Primary selector timed out, trying alternative...', 'WARN');
-      await page.waitForSelector('.search-results-container li', { timeout: 20000 });
+      try {
+        await page.waitForSelector('[class*="feed-shared-update-v2"]', { timeout: 10000 });
+      } catch (e2) {
+        log('All post selectors failed', 'ERROR');
+      }
     }
 
     // 提取貼文 - 使用多個策略
     const posts = await page.evaluate(() => {
-      // 嘗試多個可能的選擇器
-      let postElements = Array.from(document.querySelectorAll('[class*="feed-shared-update-v2"]'));
+      // 2026-01-28: 優先使用新的 data-view-name selector
+      let postElements = Array.from(document.querySelectorAll('[data-view-name="feed-full-update"]'));
 
-      // 如果第一個方法找不到，嘗試備用方法
+      // 如果第一個方法找不到，嘗試舊的 class-based selector
       if (postElements.length === 0) {
-        postElements = Array.from(document.querySelectorAll('.search-results-container li'));
+        postElements = Array.from(document.querySelectorAll('[class*="feed-shared-update-v2"]'));
       }
 
       console.log(`[DEBUG] Found ${postElements.length} post elements`);
@@ -589,36 +1351,58 @@ async function searchRelevantPosts(page) {
       return postElements.slice(0, 20).map((post, index) => {
         try {
           // 嘗試多種方式提取作者名稱
+          // 2026-01-28: LinkedIn 改用 obfuscated class names，改用 href pattern
           let author = 'Unknown';
-          const authorSelectors = [
-            '[class*="update-components-actor__name"]',
-            '[class*="entity-result__title"]',
-            '[data-test-link-to-profile-link]',
-            'span.update-components-actor__name span[aria-hidden="true"]'
-          ];
+          const authorLink = post.querySelector('a[href*="/in/"]') || post.querySelector('a[href*="/company/"]');
+          if (authorLink) {
+            // 取得 link 內的第一個 span 文字
+            const nameSpan = authorLink.querySelector('span');
+            if (nameSpan) author = nameSpan.textContent.trim();
+          }
+          // Fallback: 舊的 class-based selectors
+          if (author === 'Unknown') {
+            const authorSelectors = [
+              '[class*="update-components-actor__name"]',
+              '[class*="entity-result__title"]',
+              '[data-test-link-to-profile-link]',
+              'span.update-components-actor__name span[aria-hidden="true"]'
+            ];
 
-          for (const selector of authorSelectors) {
-            const authorElement = post.querySelector(selector);
-            if (authorElement && authorElement.textContent.trim()) {
-              author = authorElement.textContent.trim();
-              break;
+            for (const selector of authorSelectors) {
+              const authorElement = post.querySelector(selector);
+              if (authorElement && authorElement.textContent.trim()) {
+                author = authorElement.textContent.trim();
+                break;
+              }
             }
           }
 
           // 嘗試多種方式提取文字內容
+          // 2026-01-28: 優先使用 span[dir="ltr"] (LinkedIn 新結構)
           let text = '';
-          const textSelectors = [
-            '[class*="feed-shared-text"]',
-            '[class*="update-components-text"]',
-            '[class*="entity-result__summary"]',
-            '.feed-shared-update-v2__description'
-          ];
-
-          for (const selector of textSelectors) {
-            const textElement = post.querySelector(selector);
-            if (textElement && textElement.textContent.trim()) {
-              text = textElement.textContent.trim();
+          const textSpans = post.querySelectorAll('span[dir="ltr"]');
+          for (const span of textSpans) {
+            const t = span.textContent?.trim();
+            if (t && t.length > 50) { // 主要內容通常較長
+              text = t;
               break;
+            }
+          }
+          // Fallback: 舊的 class-based selectors
+          if (!text) {
+            const textSelectors = [
+              '[class*="feed-shared-text"]',
+              '[class*="update-components-text"]',
+              '[class*="entity-result__summary"]',
+              '.feed-shared-update-v2__description'
+            ];
+
+            for (const selector of textSelectors) {
+              const textElement = post.querySelector(selector);
+              if (textElement && textElement.textContent.trim()) {
+                text = textElement.textContent.trim();
+                break;
+              }
             }
           }
 
@@ -891,12 +1675,13 @@ async function typeAndSubmitComment(page, replyText, elementIndex) {
 async function replyOnCurrentPage(page, elementIndex, replyText) {
   try {
     // 找到對應的貼文元素 - 嘗試多個 selectors
+    // 2026-01-28: 優先使用新的 data-view-name selector
     const postSelectors = [
+      '[data-view-name="feed-full-update"]',
       '[class*="feed-shared-update-v2"]',
       '[data-urn*="urn:li:activity"]',
       '.scaffold-finite-scroll__content > div',
       'article[data-id]',
-      '.search-results-container li',
       '[class*="occludable-update"]'
     ];
 
@@ -912,17 +1697,31 @@ async function replyOnCurrentPage(page, elementIndex, replyText) {
     // 如果還是找不到 post elements，嘗試直接用 Comment buttons
     if (postElements.length === 0) {
       log('No post elements found, trying direct Comment button approach...', 'WARN');
-      const commentBtns = await page.$$('button[aria-label*="Comment"], button[aria-label*="comment"]');
-      if (commentBtns.length > elementIndex) {
-        log(`Found ${commentBtns.length} comment buttons, clicking index ${elementIndex}`);
-        await commentBtns[elementIndex].scrollIntoView();
+      // 2026-01-28: LinkedIn 移除了 aria-label，改用 text content 搜尋
+      const commentBtns = await page.$$eval('button', btns =>
+        btns.filter(btn => {
+          const text = btn.textContent?.trim().toLowerCase();
+          const aria = btn.getAttribute('aria-label')?.toLowerCase() || '';
+          return text === 'comment' || text === '回應' || text === '留言' ||
+                 aria.includes('comment');
+        }).map((_, i) => i)
+      );
+      // 重新選擇對應的按鈕
+      const allBtns = await page.$$('button');
+      const filteredBtns = [];
+      for (const idx of commentBtns) {
+        if (allBtns[idx]) filteredBtns.push(allBtns[idx]);
+      }
+      if (filteredBtns.length > elementIndex) {
+        log(`Found ${filteredBtns.length} comment buttons, clicking index ${elementIndex}`);
+        await filteredBtns[elementIndex].scrollIntoView();
         await randomDelay(1000, 1500);
-        await commentBtns[elementIndex].click();
+        await filteredBtns[elementIndex].click();
         await randomDelay(2000, 3000);
         // 跳到輸入留言的部分（行 795 之後）
         return await typeAndSubmitComment(page, replyText, elementIndex);
       }
-      log(`Element index ${elementIndex} out of range (0 post elements, ${commentBtns.length} comment buttons)`, 'WARN');
+      log(`Element index ${elementIndex} out of range (0 post elements, ${filteredBtns.length} comment buttons)`, 'WARN');
       return false;
     }
 
@@ -944,8 +1743,14 @@ async function replyOnCurrentPage(page, elementIndex, replyText) {
       const postRect = postEl.getBoundingClientRect();
       const postCenterY = postRect.top + postRect.height / 2;
 
-      // 找所有 aria-label 含 "Comment" 的按鈕
-      const allCommentBtns = Array.from(document.querySelectorAll('button[aria-label="Comment"]'));
+      // 2026-01-28: LinkedIn 移除了 aria-label，改用 text content 搜尋
+      const allBtns = Array.from(document.querySelectorAll('button'));
+      const allCommentBtns = allBtns.filter(btn => {
+        const text = btn.textContent?.trim().toLowerCase();
+        const aria = btn.getAttribute('aria-label')?.toLowerCase() || '';
+        return text === 'comment' || text === '回應' || text === '留言' ||
+               aria.includes('comment');
+      });
 
       if (allCommentBtns.length === 0) return null;
 

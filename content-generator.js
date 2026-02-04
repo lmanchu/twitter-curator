@@ -48,13 +48,126 @@ function loadRecentPosts(postsFile, limit = 30) {
 }
 
 /**
+ * 提取文本的開頭模式 (前 N 個詞)
+ * @param {string} text - 文本
+ * @param {number} n - 詞數 (預設 4)
+ * @returns {string} 開頭模式
+ */
+function extractOpeningPattern(text, n = 4) {
+  if (!text) return '';
+  const words = text.toLowerCase().split(/\s+/).slice(0, n);
+  return words.join(' ');
+}
+
+/**
+ * 檢查開頭模式是否重複
+ * @param {string} newContent - 新內容
+ * @param {string[]} recentPosts - 最近發文列表
+ * @param {number} maxRepeat - 允許的最大重複次數 (預設 2)
+ * @returns {boolean} true 如果開頭模式重複過多
+ */
+function isOpeningPatternOverused(newContent, recentPosts, maxRepeat = 2) {
+  const newOpening = extractOpeningPattern(newContent);
+  if (!newOpening) return false;
+
+  let count = 0;
+  for (const post of recentPosts) {
+    const postOpening = extractOpeningPattern(post);
+    if (newOpening === postOpening) {
+      count++;
+    }
+  }
+
+  if (count >= maxRepeat) {
+    console.log(`[DUPLICATE] Opening pattern "${newOpening}..." used ${count} times already. Rejecting.`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 硬編碼的禁用開頭模式
+ * 這些模式已被過度使用，AI 不應該再用
+ */
+const BANNED_OPENING_PATTERNS = [
+  'everyone says',
+  'everyone thinks',
+  'most people think',
+  'most ai assistants',
+  'we at irisgo',
+  'at irisgo we',
+  'irisgo believes that',
+];
+
+/**
+ * 過度使用的 n-gram 短語（3-4 詞組）
+ * 這些短語在最近的推文中反覆出現，需要避免
+ */
+const OVERUSED_PHRASES = [
+  'your data to',
+  'ai needs your data',
+  'needs your data',
+  'we built the opposite',
+  'we believe the opposite',
+  'we chose differently',
+  'privacy first',
+  'on-device ai',
+  'cloud dependence',
+  'data sovereignty',
+];
+
+/**
+ * 檢查是否包含過度使用的短語
+ */
+function containsOverusedPhrases(content) {
+  const lowerContent = content.toLowerCase();
+  for (const phrase of OVERUSED_PHRASES) {
+    if (lowerContent.includes(phrase)) {
+      console.log(`[DUPLICATE] Overused phrase detected: "${phrase}". Rejecting.`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 檢查是否使用了禁用的開頭模式
+ */
+function usesBannedOpening(content) {
+  const lowerContent = content.toLowerCase();
+  for (const pattern of BANNED_OPENING_PATTERNS) {
+    if (lowerContent.startsWith(pattern)) {
+      console.log(`[DUPLICATE] Banned opening pattern detected: "${pattern}". Rejecting.`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 檢查內容是否與最近發文重複
  * @param {string} newContent - 新生成的內容
  * @param {string[]} recentPosts - 最近發文列表
- * @param {number} threshold - 相似度閾值 (0-1, 預設 0.6)
+ * @param {number} threshold - 相似度閾值 (0-1, 預設 0.45 - 降低以更嚴格)
  * @returns {boolean} true 如果重複
  */
-function isContentDuplicate(newContent, recentPosts, threshold = 0.6) {
+function isContentDuplicate(newContent, recentPosts, threshold = 0.45) {
+  // 🚫 Step 1: 檢查禁用開頭模式
+  if (usesBannedOpening(newContent)) {
+    return true;
+  }
+
+  // 🔄 Step 2: 檢查過度使用的短語 (n-gram)
+  if (containsOverusedPhrases(newContent)) {
+    return true;
+  }
+
+  // 🔄 Step 3: 檢查開頭模式是否過度使用
+  if (isOpeningPatternOverused(newContent, recentPosts, 2)) {
+    return true;
+  }
+
+  // 📊 Step 4: Jaccard 相似度檢查 (閾值從 0.6 降到 0.45)
   for (const post of recentPosts) {
     const similarity = calculateSimilarity(newContent, post);
     if (similarity >= threshold) {
@@ -153,27 +266,41 @@ Brand Identity:
 
 === HOOK FORMULAS (Use ONE, vary usage) ===
 🎣 CURIOSITY: "Most [users/companies] get [X] wrong. Here's what we learned."
-🎣 CONTRARIAN: "Everyone says [common belief]. We built the opposite."
 🎣 VALUE: "[Specific number] ways to [outcome] without [pain point]:"
 🎣 STORY: "When we shipped [feature], users told us..."
+🎣 QUESTION: Start with a thought-provoking question
+🎣 STAT: Start with a surprising statistic or fact
+
+⚠️ BANNED OPENINGS (NEVER USE - overused and will be rejected):
+❌ "Everyone says..."
+❌ "Everyone thinks..."
+❌ "Most people think..."
+❌ "Most AI assistants..."
+❌ "We at IrisGo..."
+❌ "At IrisGo we..."
+❌ "IrisGo believes that..."
+
+These openings have been used too many times. Use FRESH, VARIED openings instead.
 
 === VOICE PRINCIPLES ===
 📌 SPECIFIC > VAGUE: Numbers, concrete outcomes, real examples
 📌 SHORT. BREATHE. LAND: Short sentences. Let ideas sink in.
 📌 PRODUCT PHILOSOPHY > FEATURES: Why we build, not what we build
 📌 USER OUTCOMES > COMPANY PRAISE: Show impact, not self-promotion
+📌 VARIED OPENINGS: Start each tweet differently - no patterns!
 
 CRITICAL RULES:
 - NEVER use first-person singular ("I", "my", "me")
 - NEVER reference personal experience ("After N years...", "In my career...")
 - NEVER mention founder's background or personal journey
-- Use brand perspective: "We at ${brandConfig.name}...", "${brandConfig.name} believes...", "Our approach..."
+- NEVER start with the banned openings listed above
 
 Writing Style:
 - Thoughtful and professional
 - Challenge mainstream views on AI privacy
 - Focus on product philosophy and user value
 - Direct, no corporate jargon
+- FRESH opening every time - check banned list!
 
 Topic: ${topic}
 
@@ -183,6 +310,7 @@ Requirements:
 - NO hashtags, NO emojis
 - Add genuine insight or perspective
 - Use ONE hook formula (vary which one)
+- DO NOT use any banned opening patterns
 
 Output ONLY the tweet text:`;
 }
@@ -526,6 +654,122 @@ function isRelevantToExpertise(tweetText) {
 }
 
 /**
+ * 偵測原推文的意圖
+ * @param {string} tweetText - 原推文
+ * @returns {{intent: string, requiresAnswer: boolean, sentiment: string}}
+ */
+function detectTweetIntent(tweetText) {
+  if (!tweetText) return { intent: 'unknown', requiresAnswer: false, sentiment: 'neutral' };
+
+  const lowerText = tweetText.toLowerCase();
+
+  // 問句偵測
+  const questionPatterns = [
+    /\?/,                                    // 直接問號
+    /anyone (have|know|use|recommend)/i,     // anyone have/know/use
+    /what .* (use|recommend|suggest)/i,      // what do you use
+    /which .* (better|best|recommend)/i,     // which is better
+    /any (suggestion|recommendation)/i,      // any suggestions
+    /looking for/i,                          // looking for
+    /need .* (help|advice|recommendation)/i, // need help
+    /can anyone/i,                           // can anyone
+    /does anyone/i,                          // does anyone
+    /how do (you|i|we)/i,                    // how do you
+  ];
+
+  const isQuestion = questionPatterns.some(p => p.test(lowerText));
+
+  // 抱怨/負面情緒偵測
+  const complaintPatterns = [
+    /\b(sucks?|terrible|awful|horrible|hate|annoying|frustrat|confus|junk|garbage|trash|worst|broken|buggy)\b/i,
+    /\b(kinda jank|so confusing|really bad|pretty bad|so bad)\b/i,
+    /\b(can't stand|fed up|giving up|done with)\b/i,
+  ];
+
+  const isComplaint = complaintPatterns.some(p => p.test(lowerText));
+
+  // 求推薦偵測
+  const recommendPatterns = [
+    /recommend/i,
+    /suggest/i,
+    /alternative/i,
+    /what .* (use|try)/i,
+    /anyone (have|know) .* (good|better)/i,
+  ];
+
+  const isSeekingRecommendation = recommendPatterns.some(p => p.test(lowerText));
+
+  // 決定意圖
+  let intent = 'statement';
+  let requiresAnswer = false;
+
+  if (isQuestion || isSeekingRecommendation) {
+    intent = 'question';
+    requiresAnswer = true;
+  } else if (isComplaint) {
+    intent = 'complaint';
+  }
+
+  // 決定情緒
+  let sentiment = 'neutral';
+  if (isComplaint) sentiment = 'negative';
+
+  console.log(`[INTENT] Detected: intent=${intent}, requiresAnswer=${requiresAnswer}, sentiment=${sentiment}`);
+
+  return { intent, requiresAnswer, sentiment };
+}
+
+/**
+ * 檢查回覆是否正確回應了問題
+ * @param {string} originalTweet - 原推文
+ * @param {string} generatedReply - 生成的回覆
+ * @param {Object} intentInfo - 意圖資訊
+ * @returns {boolean}
+ */
+function doesReplyAnswerQuestion(originalTweet, generatedReply, intentInfo) {
+  if (!intentInfo.requiresAnswer) return true; // 不需要回答的就通過
+
+  const replyLower = generatedReply.toLowerCase();
+
+  // 檢查是否有具體回答的跡象
+  const answerIndicators = [
+    /\b(try|use|recommend|suggest|check out|go with|prefer|like|love)\b/i,  // 推薦動詞
+    /\b(google|notion|excel|airtable|coda|numbers|sheets)\b/i,              // 具體產品名
+    /\b(i use|i'd suggest|i recommend|have you tried|you could try)\b/i,    // 回答句式
+    /\b(works great|works well|much better|way better)\b/i,                 // 評價
+  ];
+
+  const hasAnswer = answerIndicators.some(p => p.test(replyLower));
+
+  // 檢查是否只是空泛讚美（答非所問的典型模式）
+  const genericPraisePatterns = [
+    /\b(unsung hero|so important|absolutely|totally agree|great point)\b/i,
+    /\b(love .* about|beautiful thing|wonderful|amazing)\b/i,
+    /\b(tell stories|capture data|organization|productivity)\b/i, // 泛泛而談
+  ];
+
+  const isGenericPraise = genericPraisePatterns.some(p => p.test(replyLower));
+
+  // 如果原文在問問題/求推薦，但回覆只有空泛讚美，拒絕
+  if (!hasAnswer && isGenericPraise) {
+    console.log(`[INTENT] ✗ Original asks question but reply is generic praise. Rejecting.`);
+    return false;
+  }
+
+  // 如果原文在抱怨，但回覆是正面讚美（情緒不匹配），拒絕
+  if (intentInfo.sentiment === 'negative' && isGenericPraise) {
+    console.log(`[INTENT] ✗ Original is complaint but reply is praise. Tone mismatch. Rejecting.`);
+    return false;
+  }
+
+  if (hasAnswer) {
+    console.log(`[INTENT] ✓ Reply contains concrete answer/recommendation.`);
+  }
+
+  return true;
+}
+
+/**
  * 檢查生成的回覆是否與原推文相關
  * @param {string} originalTweet - 原推文
  * @param {string} generatedReply - 生成的回覆
@@ -533,6 +777,12 @@ function isRelevantToExpertise(tweetText) {
  */
 function isReplyRelevant(originalTweet, generatedReply) {
   if (!originalTweet || !generatedReply) return false;
+
+  // 🎯 Step 1: 意圖檢查 - 確保回覆正確回應原文意圖
+  const intentInfo = detectTweetIntent(originalTweet);
+  if (!doesReplyAnswerQuestion(originalTweet, generatedReply, intentInfo)) {
+    return false;
+  }
 
   // 提取原推文的關鍵詞 (長度 > 3 的單詞)
   const originalWords = new Set(
@@ -703,20 +953,47 @@ async function generateReply(tweetText, tweetAuthor, persona, apiKey, engagement
   } else {
     // 👤 個人模式：使用 Lman prompt (原有邏輯)
     console.log('[INFO] Using PERSONAL mode for reply (Lman)');
+
+    // 🎯 偵測原推文意圖，提供給 AI 參考
+    const intentInfo = detectTweetIntent(tweetText);
+    let intentGuidance = '';
+
+    if (intentInfo.requiresAnswer) {
+      intentGuidance = `
+⚠️ CRITICAL: The original tweet is ASKING A QUESTION or SEEKING RECOMMENDATIONS.
+You MUST provide a concrete answer, suggestion, or recommendation.
+DO NOT give generic praise or philosophical musings.
+Example: If they ask "what spreadsheet do you use?", answer with actual tools (Google Sheets, Notion, etc.)`;
+    } else if (intentInfo.sentiment === 'negative') {
+      intentGuidance = `
+⚠️ CRITICAL: The original tweet expresses FRUSTRATION or COMPLAINT.
+DO NOT respond with generic positive praise - it will seem tone-deaf.
+Instead: empathize, offer solutions, or share similar experiences.`;
+    }
+
     prompt = `You are Lman, a tech entrepreneur and AI expert. Write a reply to this tweet.
 
 Tweet from @${tweetAuthor}: "${tweetText}"
 
-=== REPLY HOOKS (Use ONE) ===
+=== STEP 1: UNDERSTAND THE TWEET (DO THIS FIRST) ===
+Before writing, identify:
+1. What is the person's INTENT? (asking question? complaining? sharing? discussing?)
+2. What do they NEED? (answer? empathy? validation? discussion?)
+3. What would be HELPFUL to them?
+
+${intentGuidance}
+
+=== STEP 2: REPLY HOOKS (Use ONE) ===
+🎣 ANSWER: If they ask a question, ANSWER IT with specific recommendations
+🎣 EMPATHIZE: If they're frustrated, acknowledge it and offer help
 🎣 ADD VALUE: Share specific insight/data/experience they missed
-🎣 CHALLENGE: Respectfully offer contrarian view with reasoning
 🎣 QUESTION: Ask something that invites deeper conversation
-🎣 CONNECT: Link their point to unexpected implication or example
 
 === VOICE RULES ===
 📌 SPECIFIC > VAGUE: "I cut churn 40% by..." not "This is so true!"
+📌 ANSWER QUESTIONS: If they ask, give a real answer with specifics
+📌 MATCH TONE: Don't praise when they're complaining
 📌 SHORT: 1-2 punchy sentences. Let it land.
-📌 PEAK-END: End with hook that invites response (question, challenge, cliff)
 
 CRITICAL - NEVER EXPOSE AUTOMATION:
 🚨 NEVER mention: "scheduled", "automation", "bot", "content calendar", "time zones"
@@ -726,16 +1003,15 @@ Engagement Strategy (${hookPattern.replace(/_/g, ' ')}):
 ${hookGuidance}
 
 Instructions:
-- Write a helpful, insightful reply
+- FIRST understand what they're asking/saying, THEN respond appropriately
+- If they ask for recommendations, give specific product/tool names
+- If they're complaining, empathize or offer solutions
 - Max 280 characters
 - Write in BOTH English AND Traditional Chinese (雙語): English first, then Chinese translation on new line
 - Be conversational and add value
 - Technical but friendly
-- Use ONE hook formula above
-- Make it invite further engagement (replies, likes)
-- DO NOT paraphrase or repeat the original tweet content
-- Provide a NEW perspective, question, or personal insight
-- Your reply must be SUBSTANTIALLY DIFFERENT from the original tweet
+- DO NOT give generic praise to questions/complaints
+- Your reply must DIRECTLY ADDRESS what they said
 ${avoidGuidance}
 
 Reply:`;
@@ -1369,10 +1645,19 @@ module.exports = {
   calculateSimilarity,
   loadRecentPosts,
   isContentDuplicate,
+  extractOpeningPattern,
+  isOpeningPatternOverused,
+  usesBannedOpening,
+  BANNED_OPENING_PATTERNS,
+  containsOverusedPhrases,
+  OVERUSED_PHRASES,
   // 相關性檢查
   isRelevantToExpertise,
   isReplyRelevant,
   EXPERTISE_KEYWORDS,
+  // 意圖辨識 (2026-02-03 新增)
+  detectTweetIntent,
+  doesReplyAnswerQuestion,
   // 知識庫載入
   loadKnowledgeBase
 };

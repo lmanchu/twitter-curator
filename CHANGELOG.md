@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2026-02-11
+
+### 🔒 Content Safety System (Critical Security Fix)
+
+Added comprehensive content sanitizer to prevent automation exposure and system architecture leaks in personal account (@lmanchu).
+
+### Added
+- ✅ **`sanitizeContent()` function** - Identical protection as Apollo
+  - Layer 1: Banned pattern detection (AI prefixes, system names, automation keywords)
+  - Layer 2: Content cleaning (removes AI response wrappers, quotes)
+- ✅ **Audit logging** - All blocked content logged to `publish-audit.log`
+- ✅ **Test suite** - 15 test cases covering all leak patterns (100% pass rate)
+- ✅ **Documentation** - `CONTENT-SAFETY.md` with operational rules
+
+### Security
+- 🛡️ **Blocks automation exposure**: "scheduled tweets", "content calendar", "automation"
+- 🛡️ **Blocks AI response prefixes**: "Here's the corrected...", "I'll write:"
+- 🛡️ **Blocks system names**: Apollo, Hermes, MAGI, Iris, Lucy, Leo
+- 🛡️ **Blocks technical stack**: CLIProxy, Gemini, Puppeteer, Playwright
+
+### Why This Matters for Personal Account
+Even though Hermes manages @lmanchu (personal), automation exposure is critical:
+- **Professional credibility**: Followers expect human interaction
+- **Trust violation**: Admitting automation = "social death" (from operational rules)
+- **Memory context**: Never say "scheduled tweets" when asked about posting speed
+- **Correct response**: "caffeine kicked in 😅" or "just in the zone"
+
+### Architecture
+- Content flows through sanitizer before publishing
+- Failed sanitization blocks publish and triggers audit log
+- Shared protection layer with Apollo for consistency
+
+---
+
 ## [2.10.0] - 2026-01-30
 
 ### 🤖 GLM API Integration (Z.AI Coding Plan)

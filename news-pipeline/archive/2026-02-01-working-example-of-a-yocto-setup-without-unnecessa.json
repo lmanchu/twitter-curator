@@ -1,0 +1,16 @@
+{
+  "title": "Working example of a Yocto setup without unnecessary complications",
+  "link": "https://github.com/bootlin/simplest-yocto-setup",
+  "summary": "Article URL: https://github.com/bootlin/simplest-yocto-setup\nComments URL: https://news.ycombinator.com/item?id=46842227\nPoints: 11\n# Comments: 2",
+  "pubDate": "Sun, 01 Feb 2026 00:08:15 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 0,
+  "aiScore": 2,
+  "aiReason": "Not relevant to Lman's core expertise. This is a low-level embedded Linux/Yocto technical guide with minimal business or startup implications. While infrastructure knowledge is valuable, this lacks connection to AI, Web3, privacy tech, or startup ecosystem that define Lman's focus. Low engagement potential for his audience.",
+  "suggestedAngle": null,
+  "draftTweet": null,
+  "scoredAt": "2026-02-01T04:00:38.110Z",
+  "scoredBy": "claude-haiku-4-5-20251001"
+}

@@ -1,0 +1,16 @@
+{
+  "title": "9front OS",
+  "link": "https://9front.org/",
+  "summary": "Article URL: https://9front.org/\nComments URL: https://news.ycombinator.com/item?id=46819000\nPoints: 30\n# Comments: 18",
+  "pubDate": "Fri, 30 Jan 2026 00:28:39 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 0,
+  "aiScore": 4,
+  "aiReason": "9front OS is a niche infrastructure project with limited business relevance. While it touches on systems design, it lacks direct connection to Lman's core expertise (AI/LLM, Web3, startup ecosystem). The HN discussion (30 pts, 18 comments) suggests academic interest but not mainstream tech momentum. Generic infrastructure content without startup/commercialization angle.",
+  "suggestedAngle": "If covering: focus on whether alternative OS projects like 9front represent viable infrastructure for privacy-first AI/Web3 applications in Asia, rather than pure technical nostalgia",
+  "draftTweet": "9front OS gets HN attention but building alternative OS won't move the needle. Real infrastructure gaps are in privacy-preserving inference layers and decentralized compute—not reinventing Plan 9.",
+  "scoredAt": "2026-01-30T04:01:36.378Z",
+  "scoredBy": "claude-haiku-4-5-20251001"
+}

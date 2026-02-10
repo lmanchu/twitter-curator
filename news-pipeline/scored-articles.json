@@ -1,0 +1,50 @@
+[
+  {
+    "title": "The first signs of burnout are coming from the people who embrace AI the most",
+    "link": "https://techcrunch.com/2026/02/09/the-first-signs-of-burnout-are-coming-from-the-people-who-embrace-ai-the-most/",
+    "summary": "Because employees could do more, work began bleeding into lunch breaks and late evenings. The employees' to-do lists expanded to fill every hour that AI freed up, and then kept going.",
+    "pubDate": "Tue, 10 Feb 2026 06:46:55 +0000",
+    "source": "AI News & Artificial Intelligence | TechCrunch",
+    "feedName": "TechCrunch AI",
+    "feedPriority": "high",
+    "keywordScore": 3,
+    "aiScore": 8,
+    "aiReason": "While we have AI content, this is not generic hype. It addresses the real operational paradox of AI implementation: efficiency leading to expanded scope rather than reduced hours. Perfect for Lman's 'critical thinking' style to discuss business value vs. employee retention.",
+    "suggestedAngle": "The Productivity Trap. Argue that companies using AI solely to increase output per employee are missing the point. True efficiency should reclaim time, not eliminate boundaries. Connect this to startup culture and sustainable growth.",
+    "draftTweet": "AI adoption is creating a problem: we're doing more work in the same amount of time instead of completing the same amount of work in less time. If we don't change what we mean by 'output,' we're just building burnout into our systems. Stop using AI to make the hamster wheel spin faster.",
+    "scoredAt": "2026-02-10T10:04:45.113Z",
+    "scoredBy": "glm-4.7"
+  },
+  {
+    "title": "America has a tungsten problem",
+    "link": "https://www.noleary.com/blog/posts/1",
+    "summary": "Article URL: https://www.noleary.com/blog/posts/1\nComments URL: https://news.ycombinator.com/item?id=46951057\nPoints: 171\n# Comments: 161",
+    "pubDate": "Mon, 09 Feb 2026 20:49:21 +0000",
+    "source": "Hacker News: Front Page",
+    "feedName": "Hacker News",
+    "feedPriority": "high",
+    "keywordScore": 0,
+    "aiScore": 8,
+    "aiReason": "Fits the 'Infrastructure' and 'Asia tech' preference perfectly by highlighting critical supply chain vulnerabilities. It allows for a pivot away from generic AI news to hard tech business realities and geopolitical risks affecting hardware startups.",
+    "suggestedAngle": "Contrast the software obsession with the fragility of the physical supply chain. Discuss how hardware startups must navigate the geopolitics of critical materials (Tungsten) and the strategic advantage of being in the Asia supply chain ecosystem.",
+    "draftTweet": "Founders focus intensely on LLMs while overlooking the physical infrastructure beneath them. The U.S. tungsten shortage reveals how vulnerable hardware supply chains really are. In hard tech, real competitive advantages come from raw materials and geopolitical factors—not just intellectual property.",
+    "scoredAt": "2026-02-10T10:08:34.540Z",
+    "scoredBy": "glm-4.7"
+  },
+  {
+    "title": "Discord Alternatives, Ranked",
+    "link": "https://taggart-tech.com/discord-alternatives/",
+    "summary": "Article URL: https://taggart-tech.com/discord-alternatives/\nComments URL: https://news.ycombinator.com/item?id=46949564\nPoints: 232\n# Comments: 103",
+    "pubDate": "Mon, 09 Feb 2026 19:15:14 +0000",
+    "source": "Hacker News: Front Page",
+    "feedName": "Hacker News",
+    "feedPriority": "high",
+    "keywordScore": 0,
+    "aiScore": 8,
+    "aiReason": "High relevance to infrastructure and privacy concerns, moving away from generic AI topics. The topic of data sovereignty and vendor lock-in in community tools aligns with Lman's critical thinking style and business-focused approach.",
+    "suggestedAngle": "Focus on the risks of 'Consumer Tech creep' into startups. Highlight data privacy (AI scraping) and ownership issues. Contrast convenience with the long-term business value of owning your community data.",
+    "draftTweet": "Stop searching for Discord alternatives. Focus on data sovereignty instead. Platforms that sell your user data for AI training pose a serious risk to real startups. Don't build your business on someone else's data.",
+    "scoredAt": "2026-02-10T10:10:19.967Z",
+    "scoredBy": "glm-4.7"
+  }
+]

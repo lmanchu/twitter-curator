@@ -1,0 +1,16 @@
+{
+  "title": "Stargaze: SpaceX's Space Situational Awareness System",
+  "link": "https://starlink.com/updates/stargaze",
+  "summary": "Article URL: https://starlink.com/updates/stargaze\nComments URL: https://news.ycombinator.com/item?id=46820113\nPoints: 89\n# Comments: 23",
+  "pubDate": "Fri, 30 Jan 2026 03:11:43 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 0,
+  "aiScore": 4,
+  "aiReason": "While SpaceX's space infrastructure is technically interesting, this is primarily a hardware/aerospace story with limited relevance to Lman's core expertise in AI/LLM, Web3, and startup ecosystems. The space tech angle doesn't connect to business model innovation or emerging tech trends Lman typically covers. Generic infrastructure news without unique startup/business perspective.",
+  "suggestedAngle": "If covering: Focus on the DATA/AI angle - how SpaceX monetizes space situational awareness data, competitive positioning against other space surveillance players, or implications for satellite internet business models. Otherwise, skip.",
+  "draftTweet": "SpaceX building space surveillance infrastructure. Question: who owns the data? And can this become a profitable business line separate from Starlink, or is it just vertical integration theater?",
+  "scoredAt": "2026-01-30T10:03:30.161Z",
+  "scoredBy": "claude-haiku-4-5-20251001"
+}

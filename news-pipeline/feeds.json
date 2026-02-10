@@ -1,0 +1,49 @@
+{
+  "feeds": [
+    {
+      "name": "Hacker News",
+      "url": "https://hnrss.org/frontpage?count=30",
+      "priority": "high",
+      "enabled": true
+    },
+    {
+      "name": "TechCrunch AI",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+      "priority": "high",
+      "enabled": true
+    },
+    {
+      "name": "The Verge Tech",
+      "url": "https://www.theverge.com/rss/index.xml",
+      "priority": "medium",
+      "enabled": true
+    },
+    {
+      "name": "Ars Technica",
+      "url": "https://feeds.arstechnica.com/arstechnica/technology-lab",
+      "priority": "medium",
+      "enabled": true
+    },
+    {
+      "name": "MIT Tech Review",
+      "url": "https://www.technologyreview.com/feed/",
+      "priority": "high",
+      "enabled": true
+    }
+  ],
+  "keywords": {
+    "high": ["AI", "LLM", "Claude", "GPT", "OpenAI", "Anthropic", "startup", "Web3", "privacy", "Taiwan", "agent", "automation"],
+    "medium": ["blockchain", "crypto", "SaaS", "productivity", "developer", "open source"],
+    "low": ["Apple", "Google", "Microsoft", "iPhone", "Android"]
+  },
+  "scoring": {
+    "minScoreForQueue": 7,
+    "highlightThreshold": 8,
+    "longFormThreshold": 9
+  },
+  "paths": {
+    "queueDir": "/Users/lman/Dropbox/PKM-Vault/0-Inbox/content-queue",
+    "archiveDir": "/Users/lman/twitter-curator/news-pipeline/archive",
+    "cacheFile": "/Users/lman/twitter-curator/news-pipeline/seen-articles.json"
+  }
+}

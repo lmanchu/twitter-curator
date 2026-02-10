@@ -1,0 +1,16 @@
+{
+  "title": "My thousand dollar iPhone can't do math",
+  "link": "https://journal.rafaelcosta.me/my-thousand-dollar-iphone-cant-do-math/",
+  "summary": "Article URL: https://journal.rafaelcosta.me/my-thousand-dollar-iphone-cant-do-math/\nComments URL: https://news.ycombinator.com/item?id=46849258\nPoints: 176\n# Comments: 89",
+  "pubDate": "Sun, 01 Feb 2026 20:51:56 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 1,
+  "aiScore": 4,
+  "aiReason": "While the title is clickbait-worthy, this appears to be a technical complaint about iPhone calculator functionality rather than substantive tech/startup commentary. Limited relevance to Lman's core expertise (AI/LLM, Web3, startup ecosystem). The engagement is driven by novelty/humor rather than business insight. Too similar to generic 'tech product complaint' posts that don't advance meaningful discussion.",
+  "suggestedAngle": "If pursuing: Frame as commentary on QA/testing failures at trillion-dollar companies, or how consumer-facing AI/computation bugs erode trust in premium products",
+  "draftTweet": "A $1000 device can't do basic math. This isn't a bug report—it's a signal that even Apple's quality gates are breaking under complexity. What does this say about shipping AI features at scale?",
+  "scoredAt": "2026-02-02T04:00:48.783Z",
+  "scoredBy": "claude-haiku-4-5-20251001"
+}

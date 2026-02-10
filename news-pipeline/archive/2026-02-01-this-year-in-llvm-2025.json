@@ -1,0 +1,16 @@
+{
+  "title": "This Year in LLVM (2025)",
+  "link": "https://www.npopov.com/2026/01/31/This-year-in-LLVM-2025.html",
+  "summary": "Article URL: https://www.npopov.com/2026/01/31/This-year-in-LLVM-2025.html\nComments URL: https://news.ycombinator.com/item?id=46841187\nPoints: 23\n# Comments: 0",
+  "pubDate": "Sat, 31 Jan 2026 21:44:23 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 0,
+  "aiScore": 4,
+  "aiReason": "While LLVM is infrastructure-critical for AI/LLM work, this is a technical deep-dive on compiler internals rather than business/startup relevance. The low engagement (23 points, 0 comments) and niche audience suggest limited appeal to Lman's broader tech ecosystem focus. Generic retrospective without unique startup or Asia angle.",
+  "suggestedAngle": "If covering: Focus on how LLVM improvements impact AI inference costs and startup infrastructure choices, rather than compiler technical details. Connect to Taiwan's chip/AI hardware ecosystem.",
+  "draftTweet": "LLVM improvements matter, but most startups don't optimize here yet. Real question: which AI companies will exploit better compilation for 10% cost savings before competitors do?",
+  "scoredAt": "2026-02-01T00:03:25.587Z",
+  "scoredBy": "claude-haiku-4-5-20251001"
+}

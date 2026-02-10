@@ -1,0 +1,320 @@
+{
+  "version": "1.0",
+  "description": "Hermes Content Pipeline - Multi-source configuration",
+  "sources": {
+    "tech_rss": {
+      "type": "rss",
+      "adapter": "./adapters/rss-adapter.js",
+      "weight": 0.30,
+      "enabled": true,
+      "description": "General tech news (AI-focused sources reduced)",
+      "feeds": [
+        {
+          "name": "TechCrunch AI",
+          "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+          "priority": "medium"
+        },
+        {
+          "name": "MIT Tech Review",
+          "url": "https://www.technologyreview.com/feed/",
+          "priority": "medium"
+        },
+        {
+          "name": "Ars Technica",
+          "url": "https://feeds.arstechnica.com/arstechnica/technology-lab",
+          "priority": "low"
+        }
+      ],
+      "keywords": {
+        "high": [
+          "AI",
+          "LLM",
+          "Claude",
+          "GPT",
+          "OpenAI",
+          "Anthropic",
+          "startup",
+          "Web3",
+          "privacy",
+          "Taiwan",
+          "agent",
+          "automation"
+        ],
+        "medium": [
+          "blockchain",
+          "crypto",
+          "SaaS",
+          "productivity",
+          "developer",
+          "open source"
+        ],
+        "low": [
+          "Apple",
+          "Google",
+          "Microsoft",
+          "iPhone",
+          "Android"
+        ]
+      }
+    },
+    "asia_tech": {
+      "type": "rss",
+      "adapter": "./adapters/rss-adapter.js",
+      "weight": 0.20,
+      "enabled": true,
+      "description": "Asia startup and tech scene - Lman's regional focus",
+      "feeds": [
+        {
+          "name": "Tech in Asia",
+          "url": "https://www.techinasia.com/feed",
+          "priority": "high"
+        },
+        {
+          "name": "KrASIA",
+          "url": "https://kr-asia.com/feed",
+          "priority": "high"
+        },
+        {
+          "name": "e27",
+          "url": "https://e27.co/feed/",
+          "priority": "medium"
+        }
+      ],
+      "keywords": {
+        "high": [
+          "Taiwan",
+          "Singapore",
+          "Japan",
+          "Korea",
+          "Southeast Asia",
+          "startup",
+          "funding",
+          "unicorn"
+        ],
+        "medium": [
+          "fintech",
+          "ecommerce",
+          "AI",
+          "venture capital"
+        ],
+        "low": []
+      }
+    },
+    "web3_crypto": {
+      "type": "rss",
+      "adapter": "./adapters/rss-adapter.js",
+      "weight": 0.10,
+      "enabled": true,
+      "description": "Web3 and crypto - part of Lman's expertise",
+      "feeds": [
+        {
+          "name": "The Block",
+          "url": "https://www.theblock.co/rss.xml",
+          "priority": "high"
+        },
+        {
+          "name": "CoinDesk",
+          "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+          "priority": "medium"
+        }
+      ],
+      "keywords": {
+        "high": [
+          "DeFi",
+          "NFT",
+          "Web3",
+          "Ethereum",
+          "Solana",
+          "stablecoin",
+          "regulation"
+        ],
+        "medium": [
+          "Bitcoin",
+          "crypto",
+          "blockchain",
+          "DAO"
+        ],
+        "low": [
+          "price",
+          "trading",
+          "pump"
+        ]
+      }
+    },
+    "product_indie": {
+      "type": "rss",
+      "adapter": "./adapters/rss-adapter.js",
+      "weight": 0.05,
+      "enabled": true,
+      "description": "Product launches and indie makers - Side Projects alignment",
+      "feeds": [
+        {
+          "name": "Product Hunt",
+          "url": "https://www.producthunt.com/feed",
+          "priority": "medium"
+        }
+      ],
+      "keywords": {
+        "high": [
+          "AI",
+          "productivity",
+          "developer tools",
+          "SaaS"
+        ],
+        "medium": [
+          "launch",
+          "maker",
+          "indie"
+        ],
+        "low": []
+      }
+    },
+    "twitter_interesting": {
+      "type": "twitter",
+      "adapter": "./adapters/twitter-adapter.js",
+      "weight": 0.25,
+      "enabled": true,
+      "config": {
+        "searchQueries": [
+          "AI agents",
+          "LLM production",
+          "founder advice",
+          "startup lessons"
+        ],
+        "trackedAccounts": [
+          "@karpathy",
+          "@sama",
+          "@emollick",
+          "@naval",
+          "@paulg",
+          "@balloocl",
+          "@ylecun"
+        ],
+        "minEngagement": {
+          "likes": 100,
+          "retweets": 20
+        },
+        "interactionType": "ai_decide",
+        "maxPerRun": 5
+      }
+    },
+    "anime_scifi": {
+      "type": "mixed",
+      "adapter": "./adapters/anime-adapter.js",
+      "weight": 0.15,
+      "enabled": true,
+      "feeds": [
+        {
+          "name": "Anime News Network",
+          "url": "https://www.animenewsnetwork.com/all/rss.xml?ann-hierarchical",
+          "priority": "high"
+        },
+        {
+          "name": "Crunchyroll News",
+          "url": "https://www.crunchyroll.com/feed/news-rss",
+          "priority": "high"
+        },
+        {
+          "name": "SciFi Wire",
+          "url": "https://www.syfy.com/syfywire/feed",
+          "priority": "medium"
+        }
+      ],
+      "keywords": {
+        "anime": [
+          "My Hero Academia",
+          "One Punch Man",
+          "Frieren",
+          "Attack on Titan",
+          "Chainsaw Man",
+          "Jujutsu Kaisen",
+          "Dandadan",
+          "Kaiju No. 8",
+          "Plus Ultra"
+        ],
+        "scifi": [
+          "Star Wars",
+          "Matrix",
+          "Interstellar",
+          "Dune",
+          "Foundation",
+          "cyberpunk",
+          "mecha",
+          "space opera"
+        ]
+      },
+      "strategy": "standalone_post"
+    },
+    "startup_investment": {
+      "type": "rss",
+      "adapter": "./adapters/vc-adapter.js",
+      "weight": 0.20,
+      "enabled": true,
+      "feeds": [
+        {
+          "name": "TechCrunch Startups",
+          "url": "https://techcrunch.com/category/startups/feed/",
+          "priority": "high"
+        },
+        {
+          "name": "Crunchbase News",
+          "url": "https://news.crunchbase.com/feed/",
+          "priority": "high"
+        },
+        {
+          "name": "VentureBeat",
+          "url": "https://venturebeat.com/feed/",
+          "priority": "medium"
+        }
+      ],
+      "keywords": {
+        "high": [
+          "Series A",
+          "Series B",
+          "seed round",
+          "funding",
+          "YC",
+          "Y Combinator",
+          "Sequoia",
+          "a]nz"
+        ],
+        "medium": [
+          "pivot",
+          "acquisition",
+          "IPO",
+          "unicorn",
+          "valuation"
+        ],
+        "regions": [
+          "Taiwan",
+          "Asia",
+          "Southeast Asia",
+          "Japan",
+          "Korea"
+        ]
+      }
+    }
+  },
+  "scoring": {
+    "minScoreForReview": 7,
+    "highlightThreshold": 9,
+    "autoApproveThreshold": 9,
+    "model": "gemini-2.5-flash",
+    "personaFile": "./persona/lman-writing-style.json"
+  },
+  "workflow": {
+    "checkpointChannel": "#community",
+    "approvalTimeout": "24h",
+    "cronSchedule": "0 */4 * * *",
+    "platforms": [
+      "twitter",
+      "linkedin"
+    ]
+  },
+  "paths": {
+    "pendingDir": "/Users/lman/twitter-curator/news-pipeline",
+    "queueDir": "/Users/lman/Dropbox/PKM-Vault/0-Inbox/content-queue",
+    "archiveDir": "/Users/lman/twitter-curator/news-pipeline/archive",
+    "cacheFile": "/Users/lman/twitter-curator/news-pipeline/seen-articles.json"
+  }
+}

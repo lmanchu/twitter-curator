@@ -1,0 +1,16 @@
+{
+  "title": "Writing a .NET Garbage Collector in C# – Part 6: Mark and Sweep",
+  "link": "https://minidump.net/writing-a-net-gc-in-c-part-6/",
+  "summary": "Article URL: https://minidump.net/writing-a-net-gc-in-c-part-6/\nComments URL: https://news.ycombinator.com/item?id=46804615\nPoints: 3\n# Comments: 0",
+  "pubDate": "Thu, 29 Jan 2026 01:45:45 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 0,
+  "aiScore": 2,
+  "aiReason": "This article is a highly technical deep-dive into .NET garbage collector implementation. While technically 'infrastructure,' its low-level focus lacks direct relevance to Lman's core expertise (AI/LLM, Web3, Privacy, Startup ecosystem) and Lman's critical approach to connecting tech with business value. It offers minimal potential for unique, high-level commentary relevant to Lman's audience, which is more interested in strategic tech trends and their business implications.",
+  "suggestedAngle": "Critique the focus on intricate implementation details over strategic business value or the broader implications of managed runtimes for modern high-performance systems, especially within the startup context. Emphasize the importance of connecting low-level tech discussions to business outcomes.",
+  "draftTweet": "Writing a .NET GC is a deep dive into engineering complexity. But for startups, the real conversation isn't *how* to build a GC, it's about the strategic trade-offs of managed runtimes for performance, cost, and developer velocity. Don't get lost in the weeds.",
+  "scoredAt": "2026-01-29T04:02:41.891Z",
+  "scoredBy": "gemini-2.5-flash"
+}

@@ -1,0 +1,16 @@
+{
+  "title": "Things Unix can do atomically (2010)",
+  "link": "https://rcrowley.org/2010/01/06/things-unix-can-do-atomically.html",
+  "summary": "Article URL: https://rcrowley.org/2010/01/06/things-unix-can-do-atomically.html\nComments URL: https://news.ycombinator.com/item?id=46909468\nPoints: 91\n# Comments: 33",
+  "pubDate": "Fri, 06 Feb 2026 05:29:55 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 0,
+  "aiScore": 6,
+  "aiReason": "While this technical deep dive on Unix atomic operations isn't directly in Lman's core expertise areas, it's currently trending on HN and provides infrastructure knowledge that's valuable for tech founders. The evergreen nature of the content (despite being from 2010) offers Lman an opportunity to connect atomic operations concepts to blockchain transaction integrity and AI infrastructure reliability. However, the topic is quite technical and may limit broader engagement.",
+  "suggestedAngle": "Connect atomic operations in Unix to modern tech challenges: how these fundamental concepts apply to blockchain transaction integrity, AI pipeline reliability, and building robust startup infrastructure. Emphasize how understanding these basics gives founders an edge in system design.",
+  "draftTweet": "Understanding atomic operations isn't just for systems programmers. These 2010 Unix concepts power modern blockchain transactions and AI pipelines. Founders who grasp these fundamentals build more reliable tech infrastructure. The basics never go out of style.",
+  "scoredAt": "2026-02-06T10:02:03.657Z",
+  "scoredBy": "glm-4.6"
+}

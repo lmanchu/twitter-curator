@@ -1,0 +1,16 @@
+{
+  "title": "Decompiling Xbox games using PDB debug info",
+  "link": "https://i686.me/blog/csplit/",
+  "summary": "Article URL: https://i686.me/blog/csplit/\nComments URL: https://news.ycombinator.com/item?id=46768845\nPoints: 36\n# Comments: 0",
+  "pubDate": "Mon, 26 Jan 2026 17:42:18 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 0,
+  "aiScore": 3,
+  "aiReason": "Low relevance to Lman's core expertise areas. While technically interesting, reverse engineering game binaries doesn't connect to AI/LLM, Web3, startup ecosystem, or privacy tech. Generic security/hacking content that doesn't align with stated content preferences.",
+  "suggestedAngle": "Not recommended. Could pivot if framed around IP protection failures in gaming industry or security implications for blockchain games, but current angle is too niche.",
+  "draftTweet": "Xbox debug symbols left in production binaries = lazy security. This is why game studios need better DevOps practices, not just better engineers.",
+  "scoredAt": "2026-01-29T10:02:42.103Z",
+  "scoredBy": "claude-haiku-4-5-20251001"
+}

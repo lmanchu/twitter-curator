@@ -1,0 +1,16 @@
+{
+  "title": "Show HN: ÆTHRA – Writing Music as Code",
+  "link": "https://news.ycombinator.com/item?id=46820691",
+  "summary": "Hi HN\nI’m building ÆTHRA — a programming language designed specifically for composing music and emotional soundscapes.\nInstead of focusing on general-purpose programming, ÆTHRA is a pure DSL where code directly represents musical intent: tempo, mood, chords, progression, dynamics, and instruments.\nThe goal is to make music composition feel closer to writing a story or emotion, rather than manipulating low-level audio APIs.\nKey ideas:\n- Text-based music composition\n- Chords and progressions as first-class concepts\n- Time, tempo, and structure handled by the language\n- Designed for ambient, cinematic, emotional, and minimal music\n- Interpreter written in C# (.NET)\nExample ÆTHRA code (simplified):\ntempo 60\ninstrument guitar\nchord Am for 4\nchord F for 4\nchord C for 4\nchord G for 4\nThis generates a slow, melancholic progression suitable for ambient or cinematic scenes.\nÆTHRA currently:\n- Generates WAV audio\n- Supports notes, chords, tempo, duration, velocity\n- Uses a simple interpreter (no external DAWs or MIDI tools)\n- Is intentionally minimal and readable\nWhat it is NOT:\n- Not a DAW replacement\n- Not MIDI-focused\nWhy I made it:\nI wanted a language where music is the primary output — not an afterthought. Something between code, emotion, and sound design.\nThe project is open-source and early-stage (v0.8). I’m mainly looking for:\n- Feedback on the language design\n- Ideas for musical features worth adding\n- Thoughts from people into PL design, audio, or generative art\nRepo: https://github.com/TanmayCzax/AETHRA>\nThanks for reading — happy to answer questions or discuss ideas.\nComments URL: https://news.ycombinator.com/item?id=46820691\nPoints: 67\n# Comments: 14",
+  "pubDate": "Fri, 30 Jan 2026 04:59:37 +0000",
+  "source": "Hacker News: Front Page",
+  "feedName": "Hacker News",
+  "feedPriority": "high",
+  "keywordScore": 3,
+  "aiScore": 4,
+  "aiReason": "While technically interesting, this is a niche developer tool with limited business relevance to Lman's core expertise. It's creative but lacks startup ecosystem, fundraising, or market adoption angles. The DSL approach is clever but doesn't connect to AI/LLM, Web3, privacy, or Asia tech scenes. Generic 'cool side project' content that doesn't match content diversity priorities.",
+  "suggestedAngle": "If pursuing: Focus on the business model angle - how does a niche DSL monetize? Is this a bootstrapped project or seeking funding? What's the TAM for programmatic music composition? Otherwise, skip.",
+  "draftTweet": "DSLs for music composition are clever engineering exercises. But what's the business? Most creative tools fail because creators want simplicity, not syntax. Show me the revenue model.",
+  "scoredAt": "2026-02-02T04:00:39.490Z",
+  "scoredBy": "claude-haiku-4-5-20251001"
+}

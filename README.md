@@ -1,141 +1,296 @@
 # Twitter Curator
 
-🤖 AI-powered Twitter automation system with persona-driven content generation and intelligent engagement.
+AI-powered Twitter automation system. Runs as a scheduled pipeline on macOS, generates persona-driven content, and posts through browser automation.
 
-## Features
+> **Version 2.11.0** — Production system powering [@lmanchu](https://twitter.com/lmanchu)
 
-- ✅ **Automated Tweet Posting** - Schedule and post original tweets automatically
-- ✅ **URL Tracking** - Capture and record tweet URLs for analytics
-- ✅ **Persona-Driven Content** - Generate authentic content based on your personal profile
-- ✅ **Smart Engagement** - Auto-reply to relevant tweets in your niche
-- ✅ **Anti-Detection** - Uses Puppeteer with stealth plugin to avoid platform detection
-- ✅ **macOS Integration** - LaunchAgents for scheduled automation
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│  PIPELINE (every 4h)                                │
+│  hermes-auto-pipeline.js                            │
+│  • Fetch RSS / Anime / VC sources                   │
+│  • Score relevance with AI                          │
+│  • Send review cards → Discord #review channel      │
+└─────────────────────┬───────────────────────────────┘
+                      │  Approve / Reject buttons
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│  POSTING (11 LaunchAgents, hourly schedule)         │
+│  twitter-curator.js                                 │
+│  • Pull approved content from queue                 │
+│  • Generate tweet via CLIProxyAPI                   │
+│  • Post via Puppeteer + Stealth                     │
+│  • Reply to tracked accounts                        │
+└─────────────────────────────────────────────────────┘
+```
+
+Two decoupled subsystems:
+1. **Content pipeline** — discovers and scores content, routes to Discord for human review
+2. **Posting agents** — run on schedule, pull from approved queue, post to Twitter
+
+---
 
 ## Tech Stack
 
-- **Node.js** - Runtime environment
-- **Puppeteer v24.27.0** - Browser automation (M2 Mac compatible)
-- **Puppeteer Extra + Stealth Plugin** - Anti-detection
-- **Google Gemini API** - AI content generation
-- **macOS LaunchAgents** - Scheduling system
+| Component | Technology |
+|-----------|-----------|
+| Browser automation | Puppeteer v24+ + puppeteer-extra-plugin-stealth |
+| AI content generation | CLIProxyAPI (unified proxy → Gemini / GLM / Ollama) |
+| Humanizer | Local Ollama `qwen3.5:35b-a3b` — removes AI writing patterns |
+| Review workflow | Discord embeds + interactive Approve/Reject buttons |
+| Scheduling | macOS LaunchAgents |
+| Runtime | Node.js 18+ |
 
-## Prerequisites
+---
 
-- Node.js 16+
-- macOS (for LaunchAgents)
-- Google Gemini API key
-- Twitter account (logged in via Chrome profile)
+## AI Model Stack
 
-## Installation
+```
+CLIProxyAPI (http://localhost:8317)
+  ├── Primary:  gemini-2.5-flash   (Google OAuth subscription)
+  ├── Fallback: glm-4.7            (GLM purchased plan)
+  └── Fallback: glm-4.5-air        (lighter fallback)
 
-```bash
-# Clone the repository
-git clone https://github.com/lmanchu/twitter-curator.git
-cd twitter-curator
-
-# Install dependencies
-npm install
-
-# Copy environment template
-cp .env.example .env
-
-# Edit .env and add your API keys
-nano .env
+Humanizer (runs locally, no API call):
+  └── Ollama: qwen3.5:35b-a3b      (strips AI writing signatures)
 ```
 
-## Configuration
+CLIProxyAPI is a local reverse proxy that routes to subscribed AI services. No per-call billing for primary models.
 
-### 1. Environment Variables
-
-Create a `.env` file:
-
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-HEADLESS=true
-DRY_RUN=false
-```
-
-### 2. Persona Profile
-
-Update `PERSONA_FILE` path in `config.js` to point to your persona profile markdown file.
-
-### 3. Chrome Login
-
-Run once with `HEADLESS=false` to login to Twitter:
-
-```bash
-HEADLESS=false node twitter-curator.js
-```
-
-Login manually when browser opens. Session will be saved to `chrome-user-data/`.
-
-## Usage
-
-### Manual Run
-
-```bash
-# Dry run (test without posting)
-DRY_RUN=true node twitter-curator.js
-
-# Live posting
-node twitter-curator.js
-```
+---
 
 ## Project Structure
 
 ```
 twitter-curator/
-├── twitter-curator.js        # Main automation script
-├── content-generator.js      # AI content generation
-├── config.js                 # Configuration
-├── package.json              # Dependencies
-├── .env                      # Environment variables (not committed)
-├── chrome-user-data/         # Saved browser session (not committed)
-├── logs/                     # Execution logs
-└── posted-tweets.json        # Tweet history with URLs
+├── twitter-curator.js          # Main posting agent
+├── content-generator.js        # AI tweet generation (persona-aware)
+├── post-one-tweet.js           # Manual posting (--reply, --quote support)
+├── hermes-optimizer.js         # Score-based content optimization
+├── quality-guards.js           # Content safety (v2.11.0)
+├── config.js                   # All configuration
+│
+├── news-pipeline/
+│   ├── news-monitor.js         # RSS + source fetcher
+│   ├── news-scorer.js          # AI relevance scoring + humanizer
+│   ├── feeds.json              # Feed configuration
+│   └── sources.json            # Source profiles
+│
+├── knowledge-base/             # Context files for content generation
+├── chrome-user-data/           # Saved browser session (not committed)
+├── chrome-user-data-hermes/    # Account-specific Chrome profile
+└── posted-tweets.json          # Tweet history
 ```
 
-## How It Works
+The pipeline runner and Discord bot live separately (not in this repo):
+```
+~/tachikoma/hermes/
+├── hermes-auto-pipeline.js     # Scheduled pipeline (every 4h)
+├── discord-bot.js              # Handles Approve/Reject button interactions
+└── storage/
+    ├── database.js             # SQLite state
+    └── workflows.js            # Workflow run tracking
+```
 
-1. **Content Generation**: Uses Gemini AI to generate original tweets based on your persona
-2. **Browser Automation**: Puppeteer navigates to Twitter and posts tweets
-3. **URL Capture**: After posting, retrieves the tweet URL from your profile
-4. **Engagement**: Searches for relevant tweets and generates contextual replies
-5. **Logging**: Records all activities with timestamps and URLs
+---
 
-## Key Technical Details
+## Prerequisites
 
-### Button Selector
+- macOS (LaunchAgents for scheduling)
+- Node.js 18+
+- CLIProxyAPI running locally — or substitute with direct API keys (see config below)
+- Ollama with `qwen3.5:35b-a3b` pulled (for humanizer)
+- Discord bot token (for review workflow)
+- Twitter account logged in via Chrome profile
 
-Uses `[data-testid="tweetButtonInline"]` for main tweet composition (not the modal `tweetButton`).
+---
 
-### M2 Mac Compatibility
+## Installation
 
-Puppeteer v24.27.0 resolves Rosetta compatibility issues on Apple Silicon.
+```bash
+git clone https://github.com/lmanchu/twitter-curator.git
+cd twitter-curator
+npm install
+cp .env.example .env
+nano .env
+```
 
-### Anti-Detection
+### Environment Variables
 
-- Stealth plugin to hide automation markers
-- Random delays to mimic human behavior
-- Persistent Chrome profile (no repeated logins)
-- Custom user agent
+```env
+# AI — option A: CLIProxyAPI (recommended)
+CLIPROXY_URL=http://127.0.0.1:8317
+CLIPROXY_API_KEY=your-proxy-key
+
+# AI — option B: direct Gemini
+GEMINI_API_KEY=your_gemini_api_key
+
+# Discord review workflow
+DISCORD_BOT_TOKEN=your_discord_bot_token
+HERMES_REVIEW_CHANNEL=your_discord_channel_id
+
+# Behavior
+HEADLESS=true
+DRY_RUN=false
+```
+
+### Persona Profile
+
+Point `PERSONA_FILE` in `config.js` to your persona markdown file. This drives all content generation — writing style, interests, topics to engage with.
+
+### Chrome Login
+
+Run once to log in manually:
+
+```bash
+HEADLESS=false node twitter-curator.js
+```
+
+Session saves to `chrome-user-data/`. Subsequent runs are headless.
+
+---
+
+## Usage
+
+### Scheduled (LaunchAgents)
+
+The system uses two types of LaunchAgents:
+
+**Pipeline** — runs every 4 hours, fetches and scores content:
+```
+com.lman.hermes-pipeline → tachikoma/hermes/hermes-auto-pipeline.js
+```
+
+**Posting agents** — 11 agents spread across daylight hours:
+```
+com.lman.hermesforx-twitter-00 through -10  → twitter-curator.js
+com.lman.twitter-reply-XX                   → reply-only agents
+```
+
+Set up with:
+```bash
+bash create-twitter-launchagents.sh
+```
+
+### Manual Posting
+
+Post a single tweet from any account without going through the pipeline:
+
+```bash
+# Original tweet
+node post-one-tweet.js \
+  --profile /absolute/path/to/chrome-user-data-hermes \
+  --text "your tweet text"
+
+# Reply to a tweet
+node post-one-tweet.js \
+  --profile /absolute/path/to/chrome-user-data-hermes \
+  --text "your reply" \
+  --reply https://x.com/user/status/123456
+
+# Quote tweet
+node post-one-tweet.js \
+  --profile /absolute/path/to/chrome-user-data-hermes \
+  --text "your comment" \
+  --quote https://x.com/user/status/123456
+```
+
+Note: `--profile` must be an **absolute path**.
+
+### Dry Run
+
+```bash
+DRY_RUN=true node twitter-curator.js
+```
+
+---
+
+## How the Pipeline Works
+
+```
+1. hermes-auto-pipeline.js runs (every 4h via LaunchAgent)
+   ├── Fetch from RSS feeds, anime sources, VC blogs
+   ├── Score each item: adjustedScore = 0.65×aiScore + 0.35×interestMatch×10
+   ├── Jaccard dedup — items >0.4 similarity to recent posts get downranked
+   └── Send Discord embed with [Approve] [Reject] buttons to #review channel
+
+2. Human reviews in Discord
+   ├── Approve → item enters posting queue
+   └── Reject  → archived
+
+3. hermesforx-twitter-XX agents run (hourly)
+   ├── Pull next approved item from queue
+   ├── Generate tweet via content-generator.js
+   ├── Humanize output (Ollama qwen3.5:35b-a3b)
+   ├── Run quality-guards.js safety checks
+   └── Post via Puppeteer stealth browser
+```
+
+---
+
+## Content Generation
+
+`content-generator.js` builds each tweet from:
+
+- **Persona profile** — markdown file with background, writing style, interests
+- **Writing style analysis** — derived from 200+ past Medium articles (signature phrases, hooks, voice examples)
+- **Knowledge base** — topic-specific context files in `knowledge-base/`
+- **Humanizer** — post-processes through local Ollama to remove AI writing signatures (avoidance of "delve", "tapestry", "underscore", "serves as", etc.)
+
+---
+
+## Content Safety (v2.11.0)
+
+`quality-guards.js` runs before every post:
+
+- **Automation exposure check** — flags phrases that reveal the system is automated
+- **Bot pattern detection** — catches common AI writing tells
+- **Duplicate detection** — prevents posting near-identical content
+- **Reply relevance check** — ensures replies are topically relevant before sending
+
+---
+
+## Tracked Accounts
+
+`tracked-accounts.md` lists Twitter accounts to monitor for engagement opportunities:
+
+```markdown
+## Twitter Accounts
+
+### ai-researchers
+karpathy
+sama
+
+### founders
+paulg
+```
+
+The posting agent finds recent posts from tracked accounts and generates contextual replies.
+
+---
 
 ## Troubleshooting
 
-### "Post button not found"
-- Check if Twitter UI has changed
-- Try updating the selector in `twitter-curator.js`
+**"Post button not found"**
+Twitter UI changes break selectors. Check `twitter-curator.js` for `[data-testid="tweetButtonInline"]` and update if needed.
 
-### Rosetta errors on M2 Mac
-- Ensure Puppeteer is v24+: `npm install puppeteer@^24.27.0`
+**Rosetta errors on Apple Silicon**
+Ensure Puppeteer v24+: `npm install puppeteer@^24`
 
-### Login required every time
-- Check `chrome-user-data/` directory exists
-- Run once with `HEADLESS=false` to login
+**Reply sent but not visible**
+Twitter silently spam-filters some automated replies. Verify by checking the reply count on the original tweet — if unchanged, it was filtered. Manual posting via Chrome is the only reliable workaround.
 
-## Version History
+**Pipeline running but nothing gets posted**
+Check if posting agents hit platform daily limits. Logs: `~/hermesforx-curator/logs/hermesforx-twitter-XX.log`
 
-See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+**Humanizer timing out**
+Ollama can hang on slow hardware. Check `ollama ps` for stuck requests. Restart: `launchctl kickstart -k gui/$(id -u)/com.lman.ollama`
+
+---
 
 ## License
 
@@ -143,14 +298,8 @@ MIT
 
 ## Disclaimer
 
-⚠️ **Use responsibly**: Automated posting may violate Twitter's Terms of Service. This tool is for educational purposes. Use at your own risk.
-
-## Author
-
-Built with ❤️ by Lman
+Automated posting may violate Twitter's Terms of Service. Use responsibly and at your own risk.
 
 ---
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>
+*Built by Lman*
